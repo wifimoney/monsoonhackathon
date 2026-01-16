@@ -3,23 +3,21 @@
 import { createConfig, http, WagmiProvider } from 'wagmi';
 import { arbitrumSepolia, baseSepolia, mainnet } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { injected, walletConnect } from 'wagmi/connectors';
+import { injected } from 'wagmi/connectors';
 import { ReactNode, useState } from 'react';
 
-// WalletConnect project ID - user should replace with their own
-const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'demo-project-id';
-
+// Simplified Wagmi config - Injected only (MetaMask, etc) to avoid AppKit 403 errors
 export const wagmiConfig = createConfig({
   chains: [arbitrumSepolia, baseSepolia, mainnet],
   connectors: [
     injected(),
-    walletConnect({ projectId }),
   ],
   transports: {
     [arbitrumSepolia.id]: http(),
     [baseSepolia.id]: http(),
     [mainnet.id]: http(),
   },
+  ssr: true,
 });
 
 export function Providers({ children }: { children: ReactNode }) {

@@ -8,7 +8,6 @@ import type {
     GuardiansConfig,
     GuardianPreset,
     GuardianDenial,
-    GuardianType,
 } from '@/guardians/types';
 import { GUARDIAN_PRESETS } from '@/guardians/types';
 
