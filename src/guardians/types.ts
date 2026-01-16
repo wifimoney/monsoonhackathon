@@ -92,6 +92,62 @@ export interface GuardiansState {
     dailyPnL: number;
 }
 
+// ============ EVENT TYPES (Activity Feed) ============
+export interface GuardianEvent {
+    id: string;
+    timestamp: number;
+    actionType: 'trade' | 'transfer' | 'test';
+    payload: {
+        market?: string;
+        side?: string;
+        amount?: number;
+        to?: string;
+        token?: string;
+    };
+    result: {
+        passed: boolean;
+        denials: GuardianDenial[];
+    };
+    status: 'approved' | 'denied' | 'pending';
+    txHash?: string;
+}
+
+export type GuardianEventStatus = 'approved' | 'denied' | 'pending';
+
+// ============ STATUS TYPES (Dashboard) ============
+export interface GuardianStatus {
+    org: {
+        id: string;
+        name: string;
+    };
+    account: {
+        id: string;
+        name: string;
+        address: string;
+    };
+    quorum: {
+        required: number;
+        humans: number;
+        robos: number;
+        total: number;
+    };
+    network: {
+        chainId: number;
+        name: string;
+    };
+    health: 'ready' | 'degraded' | 'offline';
+    lastHeartbeat: number;
+}
+
+export interface GuardianPolicy {
+    id: string;
+    name: string;
+    type: 'allowlist' | 'amount_limit' | 'cooldown' | 'rate_limit' | 'time_window';
+    enabled: boolean;
+    config: Record<string, unknown>;
+    description: string;
+}
+
 // ============ PRESETS ============
 export type GuardianPreset = 'default' | 'conservative' | 'pro';
 
