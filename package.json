@@ -9,7 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@bigmi/client": "^0.6.5",
+    "@bigmi/react": "^0.6.5",
     "@chorus-one/ethereum": "^2.0.4",
+    "@lifi/sdk": "^3.15.3",
+    "@lifi/widget": "^3.40.2",
+    "@mysten/dapp-kit": "^0.20.0",
+    "@solana/wallet-adapter-react": "^0.15.39",
     "@tanstack/react-query": "^5.90.18",
     "ethers": "^5.7.2",
     "next": "16.1.2",

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { TerminalOutput, useTerminal } from '@/components/TerminalOutput';
+import { CrossChainExchange } from '@/components/CrossChainExchange';
 
 const STRATEGIES = [
     { id: 'chorus-one', name: 'Chorus One', description: 'Direct staking on Ethereum', yield: '4.2%' },
@@ -17,11 +18,13 @@ export default function TradePage() {
     const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
     const [amount, setAmount] = useState('0.1');
     const [isExecuting, setIsExecuting] = useState(false);
+    const [showDeposit, setShowDeposit] = useState(false);
 
     const handleExecute = async () => {
         if (!selectedStrategy || !amount) return;
 
         setIsExecuting(true);
+        setShowDeposit(true);
         clear();
 
         const strategy = STRATEGIES.find(s => s.id === selectedStrategy);
@@ -161,6 +164,21 @@ export default function TradePage() {
                     <TerminalOutput lines={lines} title="salt-autofi" />
                 </div>
             </div>
+
+            {/* Exchange Modal - centered with animation */}
+            {showDeposit && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fadeIn"
+                    onClick={() => setShowDeposit(false)}
+                >
+                    <div
+                        className="relative animate-scaleIn"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <CrossChainExchange onClose={() => setShowDeposit(false)} />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
