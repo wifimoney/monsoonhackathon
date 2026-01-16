@@ -2,60 +2,109 @@
 
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
+import { getWalletClient, switchChain } from '@wagmi/core';
+import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
+import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche, hyperEvm } from 'viem/chains';
+import { wagmiConfig } from '@/lib/wagmi';
 
-const ORIGIN_CHAINS = [
-    { id: 1, name: 'Ethereum', icon: 'ETH' },
-    { id: 42161, name: 'Arbitrum', icon: 'ARB' },
-    { id: 10, name: 'Optimism', icon: 'OP' },
-    { id: 137, name: 'Polygon', icon: 'MATIC' },
-    { id: 8453, name: 'Base', icon: 'BASE' },
-    { id: 56, name: 'BNB Chain', icon: 'BNB' },
-    { id: 43114, name: 'Avalanche', icon: 'AVAX' },
-];
+// Use viem chain definitions
+const SUPPORTED_CHAINS = [mainnet, arbitrum, optimism, polygon, base, bsc, avalanche, hyperEvm];
 
-const ASSETS: Record<number, { symbol: string; name: string; address: string }[]> = {
+const CHAIN_ICONS: Record<number, string> = {
+    [mainnet.id]: 'ETH',
+    [arbitrum.id]: 'ARB',
+    [optimism.id]: 'OP',
+    [polygon.id]: 'MATIC',
+    [base.id]: 'BASE',
+    [bsc.id]: 'BNB',
+    [avalanche.id]: 'AVAX',
+};
+
+const ASSETS: Record<number, { symbol: string; name: string; address: string; decimals: number }[]> = {
     1: [
-        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
-        { symbol: 'USDT', name: 'Tether', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' },
-        { symbol: 'WETH', name: 'Wrapped ETH', address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' },
+        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+        { symbol: 'USDT', name: 'Tether', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+        { symbol: 'WETH', name: 'Wrapped ETH', address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18 },
     ],
     42161: [
-        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' },
-        { symbol: 'ARB', name: 'Arbitrum', address: '0x912CE59144191C1204E64559FE8253a0e49E6548' },
+        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 },
+        { symbol: 'ARB', name: 'Arbitrum', address: '0x912CE59144191C1204E64559FE8253a0e49E6548', decimals: 18 },
     ],
     10: [
-        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85' },
-        { symbol: 'OP', name: 'Optimism', address: '0x4200000000000000000000000000000000000042' },
+        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', decimals: 6 },
+        { symbol: 'OP', name: 'Optimism', address: '0x4200000000000000000000000000000000000042', decimals: 18 },
     ],
     137: [
-        { symbol: 'MATIC', name: 'Polygon', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359' },
-        { symbol: 'WETH', name: 'Wrapped ETH', address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619' },
+        { symbol: 'MATIC', name: 'Polygon', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 },
+        { symbol: 'WETH', name: 'Wrapped ETH', address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18 },
     ],
     8453: [
-        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
+        { symbol: 'ETH', name: 'Ethereum', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
     ],
     56: [
-        { symbol: 'BNB', name: 'BNB', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d' },
-        { symbol: 'USDT', name: 'Tether', address: '0x55d398326f99059fF775485246999027B3197955' },
+        { symbol: 'BNB', name: 'BNB', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 }, // BSC USDC has 18 decimals
+        { symbol: 'USDT', name: 'Tether', address: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 }, // BSC USDT has 18 decimals
     ],
     43114: [
-        { symbol: 'AVAX', name: 'Avalanche', address: '0x0000000000000000000000000000000000000000' },
-        { symbol: 'USDC', name: 'USD Coin', address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E' },
+        { symbol: 'AVAX', name: 'Avalanche', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6 },
     ],
+};
+
+// Convert human-readable amount to token amount with decimals
+const parseTokenAmount = (amount: string, decimals: number): string => {
+    if (!amount || isNaN(parseFloat(amount))) return '0';
+
+    const [whole, fraction = ''] = amount.split('.');
+    const paddedFraction = fraction.padEnd(decimals, '0').slice(0, decimals);
+    const result = whole + paddedFraction;
+
+    // Remove leading zeros but keep at least one digit
+    return result.replace(/^0+/, '') || '0';
+};
+
+// Format token amount from raw to human-readable
+const formatTokenAmount = (amount: string, decimals: number): string => {
+    if (!amount || amount === '0') return '0';
+
+    const padded = amount.padStart(decimals + 1, '0');
+    const whole = padded.slice(0, -decimals) || '0';
+    const fraction = padded.slice(-decimals);
+
+    // Remove trailing zeros from fraction
+    const trimmedFraction = fraction.replace(/0+$/, '');
+
+    return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
 };
 
 // HyperEVM chain config
 const HYPEREVM = {
     chainId: 999,
     name: 'HyperEVM',
-    usdcAddress: '0x...' // HyperEVM USDC address
+    usdcAddress: '0xb88339CB7199b77E23DB6E890353E22632Ba630f'
 };
+
+// Configure LiFi SDK at module level using wagmi/core functions
+createConfig({
+    integrator: 'Monsoon',
+    providers: [
+        EVM({
+            getWalletClient: () => getWalletClient(wagmiConfig),
+            switchChain: async (chainId) => {
+                console.log(`[LiFi] Switching chain to ${chainId}...`);
+                const chain = await switchChain(wagmiConfig, { chainId } as any);
+                console.log(`[LiFi] Chain switched to ${chain.name} (${chain.id})`);
+                return getWalletClient(wagmiConfig, { chainId: chain.id });
+            },
+        }),
+    ],
+});
 
 interface CrossChainExchangeProps {
     onClose?: () => void;
@@ -69,10 +118,11 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [step, setStep] = useState<'chain' | 'asset' | 'amount' | 'confirm'>('chain');
     const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+    const [errorMessage, setErrorMessage] = useState<string>('');
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
-    const selectedChainData = ORIGIN_CHAINS.find(c => c.id === selectedChain);
-    const selectedAssetData = availableAssets.find(a => a.symbol === selectedAsset);
+    const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
+    const selectedAssetData = availableAssets.find((a) => a.symbol === selectedAsset);
 
     const handleChainSelect = (chainId: number) => {
         setSelectedChain(chainId);
@@ -109,24 +159,119 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setIsLoading(true);
         setTxStatus('pending');
 
-        try {
-            // Simulate exchange - in production, integrate with LiFi SDK
-            await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log('\n========== CROSS-CHAIN EXCHANGE STARTED ==========');
+        console.log(`[Exchange] From: ${amount} ${selectedAsset} on ${selectedChainData?.name} (Chain ID: ${selectedChain})`);
+        console.log(`[Exchange] To: USDC on HyperEVM (Chain ID: ${HYPEREVM.chainId})`);
+        console.log(`[Exchange] User Address: ${address}`);
+        console.log('===================================================\n');
 
-            // Here you would call LiFi SDK to perform the cross-chain swap
-            // Example:
-            // const route = await getRoutes({
-            //     fromChainId: selectedChain,
-            //     fromTokenAddress: selectedAssetData?.address,
-            //     toChainId: HYPEREVM.chainId,
-            //     toTokenAddress: HYPEREVM.usdcAddress,
-            //     fromAmount: parseUnits(amount, 18).toString(),
-            //     fromAddress: address,
-            // });
+        try {
+            if (!selectedAssetData?.address) {
+                throw new Error('Selected asset address is not defined');
+            }
+
+            // Convert amount to token units with correct decimals
+            const tokenAmount = parseTokenAmount(amount, selectedAssetData.decimals);
+            console.log(`[LiFi] Token amount: ${amount} ${selectedAsset} = ${tokenAmount} (${selectedAssetData.decimals} decimals)`);
+
+            // Get routes from LiFi with slippage tolerance
+            console.log('[LiFi] Fetching routes...');
+            const result = await getRoutes({
+                fromChainId: selectedChain,
+                fromTokenAddress: selectedAssetData.address,
+                toChainId: HYPEREVM.chainId,
+                toTokenAddress: HYPEREVM.usdcAddress,
+                fromAmount: tokenAmount,
+                fromAddress: address,
+                options: {
+                    slippage: 0.03, // 3% slippage tolerance
+                    order: 'RECOMMENDED',
+                },
+            });
+
+            console.log(`[LiFi] Found ${result.routes.length} route(s)`);
+
+            if (result.routes.length === 0) {
+                throw new Error('No route found');
+            }
+
+            const route = result.routes[0];
+            const fromTokenDecimals = route.fromToken?.decimals || 18;
+            const toTokenDecimals = route.toToken?.decimals || 6; // USDC default
+            console.log('[LiFi] Selected route:', {
+                id: route.id,
+                fromToken: route.fromToken?.symbol,
+                toToken: route.toToken?.symbol,
+                fromAmount: `${formatTokenAmount(route.fromAmount, fromTokenDecimals)} ${route.fromToken?.symbol}`,
+                toAmount: `${formatTokenAmount(route.toAmount, toTokenDecimals)} ${route.toToken?.symbol}`,
+                steps: route.steps?.length,
+            });
+
+            // Execute the route using the configured wallet client
+            console.log('\n[LiFi] Executing route...');
+            const executedRoute = await executeRoute(route, {
+                updateRouteHook(updatedRoute) {
+                    const currentStep = updatedRoute.steps?.find(
+                        (step) => step.execution?.status === 'PENDING' || step.execution?.status === 'ACTION_REQUIRED'
+                    );
+
+                    console.log('\n[LiFi] Route Update:');
+                    console.log(`  Status: ${updatedRoute.steps?.map(s => s.execution?.status || 'NOT_STARTED').join(' -> ')}`);
+
+                    if (currentStep) {
+                        console.log(`  Current Step: ${currentStep.type} - ${currentStep.tool}`);
+                        if (currentStep.execution?.process) {
+                            currentStep.execution.process.forEach((proc) => {
+                                console.log(`    Process: ${proc.type} - ${proc.status} ${proc.txHash ? `(TX: ${proc.txHash})` : ''}`);
+                            });
+                        }
+                    }
+
+                    // Log completed steps
+                    updatedRoute.steps?.forEach((step, index) => {
+                        if (step.execution?.status === 'DONE') {
+                            const lastProcess = step.execution.process?.[step.execution.process.length - 1];
+                            if (lastProcess?.txHash) {
+                                console.log(`  Step ${index + 1} Complete - TX: ${lastProcess.txHash}`);
+                            }
+                        }
+                    });
+                }
+            });
+
+            if (!executedRoute) {
+                throw new Error('Exchange failed');
+            }
+
+            console.log('\n========== EXCHANGE SUCCESSFUL ==========');
+            console.log(`[Exchange] ${amount} ${selectedAsset} -> USDC on HyperEVM`);
+            console.log('==========================================\n');
 
             setTxStatus('success');
-        } catch (error) {
-            console.error('Exchange failed:', error);
+        } catch (error: any) {
+            console.error('\n========== EXCHANGE FAILED ==========');
+            console.error('[Exchange] Error:', error);
+            console.error('======================================\n');
+
+            // Check if user rejected the transaction
+            const errorMsg = error?.message || error?.toString() || '';
+            const isUserRejection =
+                errorMsg.toLowerCase().includes('user rejected') ||
+                errorMsg.toLowerCase().includes('user denied') ||
+                errorMsg.toLowerCase().includes('rejected by user') ||
+                errorMsg.toLowerCase().includes('user cancelled') ||
+                errorMsg.toLowerCase().includes('user canceled') ||
+                error?.code === 4001 || // MetaMask user rejection code
+                error?.code === 'ACTION_REJECTED';
+
+            if (isUserRejection) {
+                setErrorMessage('Transaction rejected. You can try again when ready.');
+            } else if (errorMsg.includes('No route found')) {
+                setErrorMessage('No route found for this swap. Try a different amount or token.');
+            } else {
+                setErrorMessage(errorMsg || 'Something went wrong. Please try again.');
+            }
+
             setTxStatus('error');
         } finally {
             setIsLoading(false);
@@ -139,6 +284,12 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setAmount('');
         setStep('chain');
         setTxStatus('idle');
+        setErrorMessage('');
+    };
+
+    const retryTransaction = () => {
+        setTxStatus('idle');
+        setErrorMessage('');
     };
 
     if (!isConnected) {
@@ -209,13 +360,13 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     <>
                         <p className="text-[var(--muted)] text-sm">Select your origin chain</p>
                         <div className="grid grid-cols-2 gap-3">
-                            {ORIGIN_CHAINS.map((chain) => (
+                            {SUPPORTED_CHAINS.map((chain) => (
                                 <button
                                     key={chain.id}
                                     onClick={() => handleChainSelect(chain.id)}
                                     className="card py-4 text-center hover:border-[var(--primary)] transition-all"
                                 >
-                                    <div className="text-2xl mb-2">{chain.icon}</div>
+                                    <div className="text-2xl mb-2">{CHAIN_ICONS[chain.id]}</div>
                                     <div className="font-semibold">{chain.name}</div>
                                 </button>
                             ))}
@@ -325,7 +476,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                         <button
                             onClick={handleExchange}
                             disabled={isLoading}
-                            className="btn btn-accent w-full py-4"
+                            className="btn btn-accent w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Confirm Exchange
                         </button>
@@ -361,11 +512,16 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                         <div className="text-5xl mb-4">✗</div>
                         <h4 className="text-lg font-bold text-[var(--danger)] mb-2">Exchange Failed</h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
-                            Something went wrong. Please try again.
+                            {errorMessage}
                         </p>
-                        <button onClick={resetForm} className="btn btn-secondary">
-                            Try Again
-                        </button>
+                        <div className="flex gap-3 justify-center">
+                            <button onClick={retryTransaction} className="btn btn-primary">
+                                Try Again
+                            </button>
+                            <button onClick={resetForm} className="btn btn-secondary">
+                                Start Over
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
