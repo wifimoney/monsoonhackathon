@@ -178,6 +178,10 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState<string>('');
     const [destinationDex, setDestinationDex] = useState<'spot' | 'perps'>('spot'); // Spot = 4294967295, Perps = 0
+    const [bridgedAmount, setBridgedAmount] = useState<string>(''); // Amount bridged to HyperEVM
+    const [showDepositAfterBridge, setShowDepositAfterBridge] = useState(false); // Show deposit option after bridge
+    const [progressStep, setProgressStep] = useState<number>(0); // 0 = not started, 1, 2, 3 = steps
+    const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
@@ -192,7 +196,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             setSelectedAsset('USDC'); // Auto-select USDC for HyperEVM
             setStep('amount');
         } else {
-            setStep('asset');
+        setStep('asset');
         }
     };
 
@@ -211,8 +215,8 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 setSelectedChain(null);
                 setSelectedAsset(null);
             } else {
-                setStep('asset');
-                setSelectedAsset(null);
+            setStep('asset');
+            setSelectedAsset(null);
             }
         } else if (step === 'confirm') {
             setStep('amount');
@@ -230,6 +234,25 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
         setIsLoading(true);
         setTxStatus('pending');
+        
+        // Initialize progress steps for deposit
+        // Check if we already have progress steps (from previous bridge)
+        if (progressSteps.length === 3) {
+            // Post-bridge deposit - continue from bridge progress
+            // Update step 3 description with current destinationDex
+            setProgressSteps([
+                progressSteps[0], // Keep step 1: Sending tokens
+                progressSteps[1], // Keep step 2: Receiving on HyperEVM
+                `Depositing ${amount} USDC to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+            ]);
+            setProgressStep(3); // Step 3: Depositing (steps 1 and 2 are already complete)
+        } else {
+            // Direct deposit (no bridge) - only one step
+            setProgressSteps([
+                `Depositing ${amount} USDC to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+            ]);
+            setProgressStep(1);
+        }
 
         console.log('\n========== DEPOSIT TO HYPERLIQUID STARTED ==========');
         console.log(`[Deposit] Amount: ${amount} ${selectedAsset} on HyperEVM`);
@@ -260,6 +283,13 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             const coreDepositWallet = HYPEREVM.coreDepositWalletAddress;
 
             // Contract address is now configured
+
+            // Update progress: Starting deposit
+            if (!isHyperEVMSelected) {
+                setProgressStep(3); // Step 3: Depositing
+            } else {
+                setProgressStep(1);
+            }
 
             // Check current allowance
             console.log(`[Deposit] Checking USDC allowance for CoreDepositWallet...`);
@@ -312,18 +342,24 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             // Wait for transaction confirmation
             const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
             
+            // Mark final step as complete
+            if (!isHyperEVMSelected) {
+                setProgressStep(3); // Step 3 complete (deposit after bridge)
+            } else {
+                setProgressStep(1); // Step 1 complete (direct deposit)
+            }
+            
             console.log('\n========== DEPOSIT SUCCESSFUL ==========');
             console.log(`[Deposit] ${amount} USDC transferred from HyperEVM to HyperCore`);
             console.log(`[Deposit] Funds are now available in your HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`);
             console.log(`[Deposit] Transaction: ${receipt.transactionHash}`);
             console.log('==========================================\n');
 
+            // Clear bridge state if this was a post-bridge deposit
+            setBridgedAmount('');
+            setShowDepositAfterBridge(false);
             setTxStatus('success');
         } catch (error: any) {
-            console.error('\n========== DEPOSIT FAILED ==========');
-            console.error('[Deposit] Error:', error);
-            console.error('======================================\n');
-
             const errorMsg = error?.message || error?.toString() || '';
             const isUserRejection =
                 errorMsg.toLowerCase().includes('user rejected') ||
@@ -335,8 +371,19 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 error?.code === 'ACTION_REJECTED';
 
             if (isUserRejection) {
-                setErrorMessage('Transaction rejected. You can try again when ready.');
-            } else if (errorMsg.includes('Chain not configured')) {
+                // User rejected - just reset to confirm step without showing error
+                console.log('[Deposit] Transaction rejected by user');
+                setTxStatus('idle');
+                setErrorMessage('');
+                return;
+            }
+
+            // Only show error for actual failures
+            console.error('\n========== DEPOSIT FAILED ==========');
+            console.error('[Deposit] Error:', error);
+            console.error('======================================\n');
+
+            if (errorMsg.includes('Chain not configured')) {
                 setErrorMessage('Please switch to HyperEVM network in your wallet.');
             } else {
                 setErrorMessage(errorMsg || 'Something went wrong. Please try again.');
@@ -353,6 +400,14 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
         setIsLoading(true);
         setTxStatus('pending');
+        // Initialize progress steps for cross-chain operation
+        // Use the pre-selected destinationDex that user chose in amount step
+        setProgressSteps([
+            `Sending ${amount} ${selectedAsset} on ${selectedChainData?.name}`,
+            `Receiving USDC on HyperEVM`,
+            `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+        ]);
+        setProgressStep(1); // Step 1: Sending tokens
 
         console.log('\n========== CROSS-CHAIN EXCHANGE STARTED ==========');
         console.log(`[Exchange] From: ${amount} ${selectedAsset} on ${selectedChainData?.name} (Chain ID: ${selectedChain})`);
@@ -413,6 +468,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     console.log('\n[LiFi] Route Update:');
                     console.log(`  Status: ${updatedRoute.steps?.map(s => s.execution?.status || 'NOT_STARTED').join(' -> ')}`);
 
+                    // Update progress based on route steps
+                    const doneSteps = updatedRoute.steps?.filter(s => s.execution?.status === 'DONE') || [];
+                    const totalSteps = updatedRoute.steps?.length || 1;
+                    
+                    // If all bridge steps are done, move to step 2 (receiving)
+                    if (doneSteps.length === totalSteps && totalSteps > 0) {
+                        setProgressStep(2); // Step 2: Receiving on HyperEVM
+                    } else if (currentStep && currentStep.execution?.status === 'PENDING') {
+                        setProgressStep(1); // Step 1: Still sending/bridging
+                    }
+
                     if (currentStep) {
                         console.log(`  Current Step: ${currentStep.type} - ${currentStep.tool}`);
                         if (currentStep.execution?.process) {
@@ -438,16 +504,24 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 throw new Error('Exchange failed');
             }
 
+            // Get the actual received amount from the executed route
+            const receivedAmount = executedRoute.toAmount || route.toAmount;
+            const receivedAmountFormatted = receivedAmount 
+                ? formatTokenAmount(receivedAmount, route.toToken?.decimals || 6)
+                : amount;
+
+            // Mark step 2 as complete (receiving on HyperEVM)
+            setProgressStep(2);
+
             console.log('\n========== EXCHANGE SUCCESSFUL ==========');
-            console.log(`[Exchange] ${amount} ${selectedAsset} -> USDC on HyperEVM`);
+            console.log(`[Exchange] ${amount} ${selectedAsset} -> ${receivedAmountFormatted} USDC on HyperEVM`);
             console.log('==========================================\n');
 
+            // Store bridged amount and show deposit option
+            setBridgedAmount(receivedAmountFormatted);
+            setShowDepositAfterBridge(true);
             setTxStatus('success');
         } catch (error: any) {
-            console.error('\n========== EXCHANGE FAILED ==========');
-            console.error('[Exchange] Error:', error);
-            console.error('======================================\n');
-
             // Check if user rejected the transaction
             const errorMsg = error?.message || error?.toString() || '';
             const isUserRejection =
@@ -460,8 +534,19 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 error?.code === 'ACTION_REJECTED';
 
             if (isUserRejection) {
-                setErrorMessage('Transaction rejected. You can try again when ready.');
-            } else if (errorMsg.includes('No route found')) {
+                // User rejected - just reset to confirm step without showing error
+                console.log('[Exchange] Transaction rejected by user');
+                setTxStatus('idle');
+                setErrorMessage('');
+                return;
+            }
+
+            // Only show error for actual failures
+            console.error('\n========== EXCHANGE FAILED ==========');
+            console.error('[Exchange] Error:', error);
+            console.error('======================================\n');
+
+            if (errorMsg.includes('No route found')) {
                 setErrorMessage('No route found for this swap. Try a different amount or token.');
             } else {
                 setErrorMessage(errorMsg || 'Something went wrong. Please try again.');
@@ -481,12 +566,30 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setTxStatus('idle');
         setErrorMessage('');
         setDestinationDex('spot');
+        setBridgedAmount('');
+        setShowDepositAfterBridge(false);
+        setProgressStep(0);
+        setProgressSteps([]);
     };
 
-    const retryTransaction = () => {
+    const handleDepositAfterBridge = () => {
+        // Switch to HyperEVM deposit flow
+        // Update progress steps to show all 3 steps (1 and 2 already done)
+        setProgressSteps([
+            `Sending ${bridgedAmount || amount} ${selectedAsset} on ${selectedChainData?.name}`,
+            `Receiving USDC on HyperEVM`,
+            `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+        ]);
+        setProgressStep(2); // Step 1 and 2 are complete, about to start step 3
+        
+        setSelectedChain(HYPEREVM.chainId);
+        setSelectedAsset('USDC');
+        setAmount(bridgedAmount); // Use the bridged amount
+        setStep('amount'); // Go to amount step where they can select Spot/Perps
         setTxStatus('idle');
-        setErrorMessage('');
+        setShowDepositAfterBridge(false);
     };
+
 
     if (!isConnected) {
         return (
@@ -768,6 +871,82 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                     </div>
                                 </div>
 
+                                {/* Destination Selection: Spot or Perps for cross-chain deposits */}
+                                <div className="card bg-black">
+                                    <div className="mb-3">
+                                        <label className="block text-sm font-semibold mb-2">
+                                            Final Destination (HyperCore)
+                                        </label>
+                                        <div className="text-xs text-[var(--muted)] mb-3">
+                                            Choose where to deposit your USDC after bridging to HyperEVM
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDestinationDex('spot')}
+                                            className={`card p-4 text-left transition-all ${
+                                                destinationDex === 'spot'
+                                                    ? 'border-[var(--primary)] bg-[var(--primary)]/10'
+                                                    : 'hover:border-[var(--primary)]/50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                                    destinationDex === 'spot'
+                                                        ? 'border-[var(--primary)] bg-[var(--primary)]'
+                                                        : 'border-[var(--card-border)]'
+                                                }`}>
+                                                    {destinationDex === 'spot' && (
+                                                        <div className="w-2 h-2 rounded-full bg-white" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="font-semibold">Spot Account</div>
+                                                    <div className="text-xs text-[var(--muted)] mt-1">
+                                                        For spot trading
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDestinationDex('perps')}
+                                            className={`card p-4 text-left transition-all ${
+                                                destinationDex === 'perps'
+                                                    ? 'border-[var(--primary)] bg-[var(--primary)]/10'
+                                                    : 'hover:border-[var(--primary)]/50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                                    destinationDex === 'perps'
+                                                        ? 'border-[var(--primary)] bg-[var(--primary)]'
+                                                        : 'border-[var(--card-border)]'
+                                                }`}>
+                                                    {destinationDex === 'perps' && (
+                                                        <div className="w-2 h-2 rounded-full bg-white" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="font-semibold">Perps Account</div>
+                                                    <div className="text-xs text-[var(--muted)] mt-1">
+                                                        For perpetuals trading
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div className="mt-3 p-3 bg-[var(--primary)]/5 rounded-lg border border-[var(--primary)]/20">
+                                        <div className="text-xs text-[var(--muted)]">
+                                            <strong>Why {destinationDex === 'spot' ? 'Spot' : 'Perps'}?</strong>
+                                            {destinationDex === 'spot' 
+                                                ? ' After bridging, your USDC will be automatically deposited to your Spot account for spot trading.'
+                                                : ' After bridging, your USDC will be automatically deposited to your Perps account for perpetuals trading and used as margin.'}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <button
                                     onClick={handleContinue}
                                     disabled={!amount || parseFloat(amount) <= 0}
@@ -825,12 +1004,23 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                         <span className="font-semibold">{amount} {selectedAsset} on {selectedChainData?.name}</span>
                                     </div>
                                     <div className="card bg-black flex items-center justify-between">
-                                        <span className="text-[var(--muted)]">To</span>
+                                        <span className="text-[var(--muted)]">Bridge To</span>
                                         <span className="font-semibold text-[var(--accent)]">~{amount} USDC on HyperEVM</span>
+                                    </div>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">Final Destination</span>
+                                        <span className="font-semibold">
+                                            HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'} Account
+                                        </span>
                                     </div>
                                     <div className="card bg-black flex items-center justify-between">
                                         <span className="text-[var(--muted)]">Recipient</span>
                                         <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
+                                    </div>
+                                    <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-3">
+                                        <div className="text-xs text-[var(--muted)]">
+                                            <strong>Note:</strong> After bridging to HyperEVM, your USDC will be automatically deposited to your HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'} account.
+                                        </div>
                                     </div>
                                 </>
                             )}
@@ -846,8 +1036,72 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     </>
                 )}
 
-                {/* Transaction Status */}
-                {txStatus === 'pending' && (
+                {/* Transaction Status with Progress Tracker */}
+                {txStatus === 'pending' && progressSteps.length > 0 && (
+                    <div className="space-y-6 py-6">
+                        <div className="text-center">
+                            <div className="text-5xl mb-4 animate-spin">⟳</div>
+                            <h4 className="text-lg font-bold mb-2">
+                                {isHyperEVMSelected ? 'Processing Deposit' : 'Processing Transaction'}
+                            </h4>
+                        </div>
+                        
+                        {/* Progress Steps Tracker */}
+                        <div className="space-y-4">
+                            {progressSteps.map((stepDesc, index) => {
+                                const stepNumber = index + 1;
+                                const isCompleted = stepNumber < progressStep;
+                                const isCurrent = stepNumber === progressStep;
+                                const isPending = stepNumber > progressStep;
+
+                                return (
+                                    <div key={index} className="flex items-start gap-4">
+                                        {/* Step Indicator */}
+                                        <div className="flex flex-col items-center">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                                                isCompleted
+                                                    ? 'bg-[var(--accent)] text-white'
+                                                    : isCurrent
+                                                    ? 'bg-[var(--primary)] text-white animate-pulse'
+                                                    : 'bg-[var(--card-border)] text-[var(--muted)]'
+                                            }`}>
+                                                {isCompleted ? '✓' : stepNumber}
+                                            </div>
+                                            {index < progressSteps.length - 1 && (
+                                                <div className={`w-1 flex-1 min-h-[40px] my-2 ${
+                                                    isCompleted ? 'bg-[var(--accent)]' : 'bg-[var(--card-border)]'
+                                                }`} />
+                                            )}
+                                        </div>
+                                        
+                                        {/* Step Description */}
+                                        <div className="flex-1 pt-1">
+                                            <div className={`font-semibold mb-1 ${
+                                                isCurrent ? 'text-[var(--primary)]' : isCompleted ? 'text-[var(--accent)]' : 'text-[var(--muted)]'
+                                            }`}>
+                                                {stepDesc}
+                                            </div>
+                                            {isCurrent && (
+                                                <div className="text-xs text-[var(--muted)] flex items-center gap-2">
+                                                    <span className="animate-pulse">●</span>
+                                                    In progress...
+                                                </div>
+                                            )}
+                                            {isCompleted && (
+                                                <div className="text-xs text-[var(--accent)]">
+                                                    ✓ Completed
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Fallback for pending without progress steps */}
+                {txStatus === 'pending' && progressSteps.length === 0 && (
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4 animate-spin">⟳</div>
                         <h4 className="text-lg font-bold mb-2">
@@ -865,16 +1119,44 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4">✓</div>
                         <h4 className="text-lg font-bold text-[var(--accent)] mb-2">
-                            {isHyperEVMSelected ? 'Deposit Successful!' : 'Exchange Successful!'}
+                            {isHyperEVMSelected ? 'Deposit Successful!' : 'Bridge Successful!'}
                         </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
                             {isHyperEVMSelected
                                 ? `${amount} USDC transferred from HyperEVM to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
-                                : `${amount} ${selectedAsset} exchanged to USDC on HyperEVM`}
+                                : `${bridgedAmount || amount} USDC is now on HyperEVM`}
                         </p>
+                        {!isHyperEVMSelected && showDepositAfterBridge && (
+                            <div className="space-y-3">
+                                <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-4 mb-4">
+                                    <div className="text-sm text-[var(--muted)] mb-2">
+                                        Your USDC is on HyperEVM. Ready to deposit to HyperCore.
+                                    </div>
+                                    <div className="text-xs text-[var(--muted)]">
+                                        Destination: <strong>{destinationDex === 'spot' ? 'Spot' : 'Perps'} Account</strong>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={handleDepositAfterBridge} 
+                                    className="btn btn-accent w-full py-4"
+                                >
+                                    Deposit to HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'}
+                                </button>
+                                <button onClick={resetForm} className="btn btn-secondary w-full">
+                                    Done
+                                </button>
+                            </div>
+                        )}
+                        {isHyperEVMSelected && (
+                            <button onClick={resetForm} className="btn btn-secondary">
+                                New Deposit
+                            </button>
+                        )}
+                        {!isHyperEVMSelected && !showDepositAfterBridge && (
                         <button onClick={resetForm} className="btn btn-secondary">
-                            {isHyperEVMSelected ? 'New Deposit' : 'New Exchange'}
+                            New Exchange
                         </button>
+                        )}
                     </div>
                 )}
 
@@ -887,14 +1169,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                         <p className="text-[var(--muted)] text-sm mb-4">
                             {errorMessage}
                         </p>
-                        <div className="flex gap-3 justify-center">
-                            <button onClick={retryTransaction} className="btn btn-primary">
-                                Try Again
-                            </button>
-                            <button onClick={resetForm} className="btn btn-secondary">
-                                Start Over
-                            </button>
-                        </div>
                     </div>
                 )}
             </div>
