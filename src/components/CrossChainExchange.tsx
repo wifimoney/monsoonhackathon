@@ -177,6 +177,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [step, setStep] = useState<'chain' | 'asset' | 'amount' | 'confirm'>('chain');
     const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState<string>('');
+    const [destinationDex, setDestinationDex] = useState<'spot' | 'perps'>('spot'); // Spot = 4294967295, Perps = 0
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
@@ -291,17 +292,18 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Step 2: Call deposit() on CoreDepositWallet to transfer USDC from HyperEVM to HyperCore
             // destinationDex: 0 = Perps account, 4294967295 (uint32.max) = Spot account
-            // For most users, they want funds in Spot account
-            const destinationDex = 4294967295; // 4294967295 = Spot, 0 = Perps
+            // Use the user's selected destination
+            const destinationDexValue = destinationDex === 'spot' ? 4294967295 : 0;
             
-            console.log(`[Deposit] Depositing ${amount} USDC to HyperCore (Spot account)...`);
+            console.log(`[Deposit] Depositing ${amount} USDC to HyperCore (${destinationDex === 'spot' ? 'Spot' : 'Perps'} account)...`);
+            console.log(`[Deposit] Destination: ${destinationDex} (destinationDex = ${destinationDexValue})`);
             console.log(`[Deposit] Note: First-time deposits may incur a 1 USDC account creation fee`);
             
             const depositHash = await writeContract(wagmiConfig, {
                 address: coreDepositWallet,
                 abi: CORE_DEPOSIT_WALLET_ABI,
                 functionName: 'deposit',
-                args: [amountBigInt, destinationDex],
+                args: [amountBigInt, destinationDexValue],
                 chainId: HYPEREVM.chainId,
             });
 
@@ -312,7 +314,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             
             console.log('\n========== DEPOSIT SUCCESSFUL ==========');
             console.log(`[Deposit] ${amount} USDC transferred from HyperEVM to HyperCore`);
-            console.log(`[Deposit] Funds are now available in your HyperCore Spot account`);
+            console.log(`[Deposit] Funds are now available in your HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`);
             console.log(`[Deposit] Transaction: ${receipt.transactionHash}`);
             console.log('==========================================\n');
 
@@ -478,6 +480,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setStep('chain');
         setTxStatus('idle');
         setErrorMessage('');
+        setDestinationDex('spot');
     };
 
     const retryTransaction = () => {
@@ -626,14 +629,91 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                     </div>
                                 </div>
 
+                                {/* Destination Selection: Spot or Perps */}
+                                <div className="card bg-black">
+                                    <div className="mb-3">
+                                        <label className="block text-sm font-semibold mb-2">
+                                            Deposit Destination
+                                        </label>
+                                        <div className="text-xs text-[var(--muted)] mb-3">
+                                            Choose where to deposit your USDC in HyperCore
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDestinationDex('spot')}
+                                            className={`card p-4 text-left transition-all ${
+                                                destinationDex === 'spot'
+                                                    ? 'border-[var(--primary)] bg-[var(--primary)]/10'
+                                                    : 'hover:border-[var(--primary)]/50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                                    destinationDex === 'spot'
+                                                        ? 'border-[var(--primary)] bg-[var(--primary)]'
+                                                        : 'border-[var(--card-border)]'
+                                                }`}>
+                                                    {destinationDex === 'spot' && (
+                                                        <div className="w-2 h-2 rounded-full bg-white" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="font-semibold">Spot Account</div>
+                                                    <div className="text-xs text-[var(--muted)] mt-1">
+                                                        For spot trading
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDestinationDex('perps')}
+                                            className={`card p-4 text-left transition-all ${
+                                                destinationDex === 'perps'
+                                                    ? 'border-[var(--primary)] bg-[var(--primary)]/10'
+                                                    : 'hover:border-[var(--primary)]/50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                                    destinationDex === 'perps'
+                                                        ? 'border-[var(--primary)] bg-[var(--primary)]'
+                                                        : 'border-[var(--card-border)]'
+                                                }`}>
+                                                    {destinationDex === 'perps' && (
+                                                        <div className="w-2 h-2 rounded-full bg-white" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="font-semibold">Perps Account</div>
+                                                    <div className="text-xs text-[var(--muted)] mt-1">
+                                                        For perpetuals trading
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <div className="mt-3 p-3 bg-[var(--primary)]/5 rounded-lg border border-[var(--primary)]/20">
+                                        <div className="text-xs text-[var(--muted)]">
+                                            <strong>Why {destinationDex === 'spot' ? 'Spot' : 'Perps'}?</strong>
+                                            {destinationDex === 'spot' 
+                                                ? ' Spot accounts are used for spot trading (buying and selling assets at current market prices). Your funds will be deposited to your Spot balance in HyperCore.'
+                                                : ' Perps accounts are used for perpetual futures trading (leveraged positions). Your funds will be deposited to your Perps margin account in HyperCore.'}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-4">
                                     <div className="flex items-start gap-3">
                                         <div className="text-xl">💼</div>
                                         <div className="flex-1">
-                                            <div className="font-semibold mb-1">Deposit to Hyperliquid Account</div>
+                                            <div className="font-semibold mb-1">Deposit to Hyperliquid {destinationDex === 'spot' ? 'Spot' : 'Perps'} Account</div>
                                             <div className="text-sm text-[var(--muted)]">
-                                                Funds will be deposited directly to your Hyperliquid account on HyperEVM.
-                                                Make sure you're connected to the HyperEVM network.
+                                                Funds will be transferred from HyperEVM to your HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'} account.
+                                                {destinationDex === 'spot' && ' Make sure you\'re connected to the HyperEVM network.'}
+                                                {destinationDex === 'perps' && ' This will be used as margin for perpetuals trading.'}
                                             </div>
                                         </div>
                                     </div>
@@ -715,12 +795,27 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                         <span className="font-semibold">{amount} USDC</span>
                                     </div>
                                     <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">Destination</span>
+                                        <span className="font-semibold">
+                                            {destinationDex === 'spot' ? 'Spot Account' : 'Perps Account'}
+                                        </span>
+                                    </div>
+                                    <div className="card bg-black flex items-center justify-between">
                                         <span className="text-[var(--muted)]">Network</span>
-                                        <span className="font-semibold">HyperEVM</span>
+                                        <span className="font-semibold">HyperEVM → HyperCore</span>
                                     </div>
                                     <div className="card bg-black flex items-center justify-between">
                                         <span className="text-[var(--muted)]">Account</span>
                                         <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
+                                    </div>
+                                    <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-3">
+                                        <div className="text-xs text-[var(--muted)]">
+                                            <strong>DestinationDex:</strong> {destinationDex === 'spot' ? '4294967295 (Spot)' : '0 (Perps)'}
+                                            <br />
+                                            {destinationDex === 'spot' 
+                                                ? 'Funds will be deposited to your Spot account for spot trading.'
+                                                : 'Funds will be deposited to your Perps account for perpetuals trading and used as margin.'}
+                                        </div>
                                     </div>
                                 </>
                             ) : (
@@ -760,7 +855,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                         </h4>
                         <p className="text-[var(--muted)] text-sm">
                             {isHyperEVMSelected 
-                                ? `Depositing ${amount} USDC to your Hyperliquid account...`
+                                ? `Depositing ${amount} USDC to your Hyperliquid ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account...`
                                 : `Bridging ${amount} ${selectedAsset} to USDC on HyperEVM...`}
                         </p>
                     </div>
@@ -774,7 +869,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                         </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
                             {isHyperEVMSelected
-                                ? `${amount} USDC transferred from HyperEVM to HyperCore Spot account`
+                                ? `${amount} USDC transferred from HyperEVM to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
                                 : `${amount} ${selectedAsset} exchanged to USDC on HyperEVM`}
                         </p>
                         <button onClick={resetForm} className="btn btn-secondary">
