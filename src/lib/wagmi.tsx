@@ -22,16 +22,16 @@ const hyperEvm = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ['https://rpc.hyperliquid-testnet.xyz'],
+      http: ['https://rpc.hyperliquid.xyz/evm'],
     },
   },
   blockExplorers: {
     default: {
       name: 'HyperEVM Explorer',
-      url: 'https://explorer.hyperliquid-testnet.xyz',
+      url: 'https://explorer.hyperliquid.xyz',
     },
   },
-  testnet: true,
+  testnet: false,
 }) as Chain;
 
 // All chains that can be used in the app

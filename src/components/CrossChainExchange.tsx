@@ -2,10 +2,21 @@
 
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
-import { getWalletClient, switchChain } from '@wagmi/core';
+import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract } from '@wagmi/core';
 import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
-import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche, hyperEvm } from 'viem/chains';
+import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche } from 'viem/chains';
 import { wagmiConfig } from '@/lib/wagmi';
+import { parseUnits } from 'viem';
+
+// HyperEVM chain definition
+const hyperEvm = {
+    id: 999,
+    name: 'HyperEVM',
+    nativeCurrency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
+    rpcUrls: {
+        default: { http: ['https://rpc.hyperliquid.xyz/evm'] },
+    },
+} as const;
 
 // Use viem chain definitions
 const SUPPORTED_CHAINS = [mainnet, arbitrum, optimism, polygon, base, bsc, avalanche, hyperEvm];
@@ -18,6 +29,7 @@ const CHAIN_ICONS: Record<number, string> = {
     [base.id]: 'BASE',
     [bsc.id]: 'BNB',
     [avalanche.id]: 'AVAX',
+    [hyperEvm.id]: 'HYPE',
 };
 
 const ASSETS: Record<number, { symbol: string; name: string; address: string; decimals: number }[]> = {
@@ -55,6 +67,10 @@ const ASSETS: Record<number, { symbol: string; name: string; address: string; de
         { symbol: 'AVAX', name: 'Avalanche', address: '0x0000000000000000000000000000000000000000', decimals: 18 },
         { symbol: 'USDC', name: 'USD Coin', address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6 },
     ],
+    // HyperEVM assets - for direct deposit to Hyperliquid
+    999: [
+        { symbol: 'USDC', name: 'USD Coin', address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f', decimals: 6 },
+    ],
 };
 
 // Convert human-readable amount to token amount with decimals
@@ -87,8 +103,50 @@ const formatTokenAmount = (amount: string, decimals: number): string => {
 const HYPEREVM = {
     chainId: 999,
     name: 'HyperEVM',
-    usdcAddress: '0xb88339CB7199b77E23DB6E890353E22632Ba630f'
+    usdcAddress: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
+    // CoreDepositWallet contract - handles transfers from HyperEVM to HyperCore
+    // Contract address from Hyperliquid mainnet
+    coreDepositWalletAddress: '0x6b9e773128f453f5c2c60935ee2de2cbc5390a24' as `0x${string}`,
 };
+
+// ERC20 ABI for approve and transfer functions
+const ERC20_ABI = [
+    {
+        name: 'approve',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'spender', type: 'address' },
+            { name: 'amount', type: 'uint256' },
+        ],
+        outputs: [{ name: '', type: 'bool' }],
+    },
+    {
+        name: 'allowance',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+        ],
+        outputs: [{ name: '', type: 'uint256' }],
+    },
+] as const;
+
+// CoreDepositWallet ABI - for depositing USDC from HyperEVM to HyperCore
+// destinationDex: 0 = Perps, 4294967295 (uint32.max) = Spot
+const CORE_DEPOSIT_WALLET_ABI = [
+    {
+        name: 'deposit',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'amount', type: 'uint256' },
+            { name: 'destinationDex', type: 'uint32' }, // 0 = Perps, 4294967295 = Spot
+        ],
+        outputs: [],
+    },
+] as const;
 
 // Configure LiFi SDK at module level using wagmi/core functions
 createConfig({
@@ -111,7 +169,7 @@ interface CrossChainExchangeProps {
 }
 
 export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
-    const { isConnected, address } = useAccount();
+    const { isConnected, address, chain } = useAccount();
     const [selectedChain, setSelectedChain] = useState<number | null>(null);
     const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
     const [amount, setAmount] = useState('');
@@ -123,11 +181,18 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
     const selectedAssetData = availableAssets.find((a) => a.symbol === selectedAsset);
+    const isHyperEVMSelected = selectedChain === HYPEREVM.chainId;
 
     const handleChainSelect = (chainId: number) => {
         setSelectedChain(chainId);
         setSelectedAsset(null);
-        setStep('asset');
+        // If HyperEVM is selected, skip asset selection and go to amount
+        if (chainId === HYPEREVM.chainId) {
+            setSelectedAsset('USDC'); // Auto-select USDC for HyperEVM
+            setStep('amount');
+        } else {
+            setStep('asset');
+        }
     };
 
     const handleAssetSelect = (symbol: string) => {
@@ -140,8 +205,14 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             setStep('chain');
             setSelectedChain(null);
         } else if (step === 'amount') {
-            setStep('asset');
-            setSelectedAsset(null);
+            if (isHyperEVMSelected) {
+                setStep('chain');
+                setSelectedChain(null);
+                setSelectedAsset(null);
+            } else {
+                setStep('asset');
+                setSelectedAsset(null);
+            }
         } else if (step === 'confirm') {
             setStep('amount');
         }
@@ -150,6 +221,128 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const handleContinue = () => {
         if (step === 'amount' && amount) {
             setStep('confirm');
+        }
+    };
+
+    const handleDeposit = async () => {
+        if (!selectedChain || !selectedAsset || !amount || !address) return;
+
+        setIsLoading(true);
+        setTxStatus('pending');
+
+        console.log('\n========== DEPOSIT TO HYPERLIQUID STARTED ==========');
+        console.log(`[Deposit] Amount: ${amount} ${selectedAsset} on HyperEVM`);
+        console.log(`[Deposit] Account Address: ${address}`);
+        console.log('===================================================\n');
+
+        try {
+            if (!selectedAssetData?.address) {
+                throw new Error('Selected asset address is not defined');
+            }
+
+            // Check if user is on HyperEVM network
+            const currentChainId = chain?.id;
+            if (currentChainId !== HYPEREVM.chainId) {
+                console.log(`[Deposit] Switching to HyperEVM network...`);
+                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
+            }
+
+            // Convert amount to token units
+            const tokenAmount = parseTokenAmount(amount, selectedAssetData.decimals);
+            const amountBigInt = BigInt(tokenAmount);
+
+            console.log(`[Deposit] Preparing USDC deposit to Hyperliquid...`);
+            console.log(`[Deposit] Amount: ${amount} USDC = ${tokenAmount} (6 decimals)`);
+
+            // Step 1: Approve USDC spending to CoreDepositWallet contract
+            const usdcAddress = selectedAssetData.address as `0x${string}`;
+            const coreDepositWallet = HYPEREVM.coreDepositWalletAddress;
+
+            // Contract address is now configured
+
+            // Check current allowance
+            console.log(`[Deposit] Checking USDC allowance for CoreDepositWallet...`);
+            const currentAllowance = await readContract(wagmiConfig, {
+                address: usdcAddress,
+                abi: ERC20_ABI,
+                functionName: 'allowance',
+                args: [address as `0x${string}`, coreDepositWallet],
+                chainId: HYPEREVM.chainId,
+            });
+
+            console.log(`[Deposit] Current allowance: ${currentAllowance.toString()}`);
+
+            // Approve if allowance is insufficient
+            if (currentAllowance < amountBigInt) {
+                console.log(`[Deposit] Approving USDC spending to CoreDepositWallet contract...`);
+                
+                const approveHash = await writeContract(wagmiConfig, {
+                    address: usdcAddress,
+                    abi: ERC20_ABI,
+                    functionName: 'approve',
+                    args: [coreDepositWallet, amountBigInt],
+                    chainId: HYPEREVM.chainId,
+                });
+
+                console.log(`[Deposit] Approve transaction submitted: ${approveHash}`);
+                const approveReceipt = await waitForTransactionReceipt(wagmiConfig, { hash: approveHash });
+                console.log(`[Deposit] Approval confirmed: ${approveReceipt.transactionHash}`);
+            }
+
+            // Step 2: Call deposit() on CoreDepositWallet to transfer USDC from HyperEVM to HyperCore
+            // destinationDex: 0 = Perps account, 4294967295 (uint32.max) = Spot account
+            // For most users, they want funds in Spot account
+            const destinationDex = 4294967295; // 4294967295 = Spot, 0 = Perps
+            
+            console.log(`[Deposit] Depositing ${amount} USDC to HyperCore (Spot account)...`);
+            console.log(`[Deposit] Note: First-time deposits may incur a 1 USDC account creation fee`);
+            
+            const depositHash = await writeContract(wagmiConfig, {
+                address: coreDepositWallet,
+                abi: CORE_DEPOSIT_WALLET_ABI,
+                functionName: 'deposit',
+                args: [amountBigInt, destinationDex],
+                chainId: HYPEREVM.chainId,
+            });
+
+            console.log(`[Deposit] Deposit transaction submitted: ${depositHash}`);
+
+            // Wait for transaction confirmation
+            const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
+            
+            console.log('\n========== DEPOSIT SUCCESSFUL ==========');
+            console.log(`[Deposit] ${amount} USDC transferred from HyperEVM to HyperCore`);
+            console.log(`[Deposit] Funds are now available in your HyperCore Spot account`);
+            console.log(`[Deposit] Transaction: ${receipt.transactionHash}`);
+            console.log('==========================================\n');
+
+            setTxStatus('success');
+        } catch (error: any) {
+            console.error('\n========== DEPOSIT FAILED ==========');
+            console.error('[Deposit] Error:', error);
+            console.error('======================================\n');
+
+            const errorMsg = error?.message || error?.toString() || '';
+            const isUserRejection =
+                errorMsg.toLowerCase().includes('user rejected') ||
+                errorMsg.toLowerCase().includes('user denied') ||
+                errorMsg.toLowerCase().includes('rejected by user') ||
+                errorMsg.toLowerCase().includes('user cancelled') ||
+                errorMsg.toLowerCase().includes('user canceled') ||
+                error?.code === 4001 ||
+                error?.code === 'ACTION_REJECTED';
+
+            if (isUserRejection) {
+                setErrorMessage('Transaction rejected. You can try again when ready.');
+            } else if (errorMsg.includes('Chain not configured')) {
+                setErrorMessage('Please switch to HyperEVM network in your wallet.');
+            } else {
+                setErrorMessage(errorMsg || 'Something went wrong. Please try again.');
+            }
+
+            setTxStatus('error');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -317,7 +510,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                             ←
                         </button>
                     )}
-                    <h3 className="text-xl font-bold">Exchange to HyperEVM</h3>
+                    <h3 className="text-xl font-bold">
+                        {isHyperEVMSelected ? 'Deposit to Hyperliquid' : 'Exchange to HyperEVM'}
+                    </h3>
                 </div>
                 {onClose && (
                     <button
@@ -375,7 +570,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 )}
 
                 {/* Step 2: Select Asset */}
-                {step === 'asset' && (
+                {step === 'asset' && !isHyperEVMSelected && (
                     <>
                         <p className="text-[var(--muted)] text-sm">
                             Select asset from {selectedChainData?.name}
@@ -403,82 +598,155 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 {/* Step 3: Enter Amount */}
                 {step === 'amount' && (
                     <>
-                        <p className="text-[var(--muted)] text-sm">Enter amount to exchange</p>
+                        <p className="text-[var(--muted)] text-sm">
+                            {isHyperEVMSelected 
+                                ? 'Enter amount to deposit to your Hyperliquid account'
+                                : 'Enter amount to exchange'}
+                        </p>
 
-                        <div className="card bg-black">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm text-[var(--muted)]">From</span>
-                                <span className="text-sm text-[var(--muted)]">{selectedChainData?.name}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <input
-                                    type="number"
-                                    value={amount}
-                                    onChange={(e) => setAmount(e.target.value)}
-                                    placeholder="0.0"
-                                    className="flex-1 bg-transparent text-2xl font-bold focus:outline-none"
-                                />
-                                <div className="px-3 py-2 rounded-lg bg-[var(--card)] font-semibold">
-                                    {selectedAsset}
+                        {isHyperEVMSelected ? (
+                            // Deposit flow for HyperEVM
+                            <div className="space-y-4">
+                                <div className="card bg-black">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm text-[var(--muted)]">Deposit Amount</span>
+                                        <span className="text-sm text-[var(--muted)]">HyperEVM</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            value={amount}
+                                            onChange={(e) => setAmount(e.target.value)}
+                                            placeholder="0.0"
+                                            className="flex-1 bg-transparent text-2xl font-bold focus:outline-none"
+                                        />
+                                        <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
+                                            USDC
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
 
-                        <div className="flex items-center justify-center text-2xl text-[var(--muted)]">
-                            ↓
-                        </div>
-
-                        <div className="card bg-black">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm text-[var(--muted)]">To</span>
-                                <span className="text-sm text-[var(--muted)]">HyperEVM</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="flex-1 text-2xl font-bold text-[var(--muted)]">
-                                    {amount ? '~' + amount : '0.0'}
+                                <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="text-xl">💼</div>
+                                        <div className="flex-1">
+                                            <div className="font-semibold mb-1">Deposit to Hyperliquid Account</div>
+                                            <div className="text-sm text-[var(--muted)]">
+                                                Funds will be deposited directly to your Hyperliquid account on HyperEVM.
+                                                Make sure you're connected to the HyperEVM network.
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
-                                    USDC
-                                </div>
-                            </div>
-                        </div>
 
-                        <button
-                            onClick={handleContinue}
-                            disabled={!amount || parseFloat(amount) <= 0}
-                            className="btn btn-primary w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Continue
-                        </button>
+                                <button
+                                    onClick={handleContinue}
+                                    disabled={!amount || parseFloat(amount) <= 0}
+                                    className="btn btn-primary w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Continue to Deposit
+                                </button>
+                            </div>
+                        ) : (
+                            // Exchange flow for other chains
+                            <>
+                                <div className="card bg-black">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm text-[var(--muted)]">From</span>
+                                        <span className="text-sm text-[var(--muted)]">{selectedChainData?.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            value={amount}
+                                            onChange={(e) => setAmount(e.target.value)}
+                                            placeholder="0.0"
+                                            className="flex-1 bg-transparent text-2xl font-bold focus:outline-none"
+                                        />
+                                        <div className="px-3 py-2 rounded-lg bg-[var(--card)] font-semibold">
+                                            {selectedAsset}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-center text-2xl text-[var(--muted)]">
+                                    ↓
+                                </div>
+
+                                <div className="card bg-black">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm text-[var(--muted)]">To</span>
+                                        <span className="text-sm text-[var(--muted)]">HyperEVM</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex-1 text-2xl font-bold text-[var(--muted)]">
+                                            {amount ? '~' + amount : '0.0'}
+                                        </div>
+                                        <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
+                                            USDC
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleContinue}
+                                    disabled={!amount || parseFloat(amount) <= 0}
+                                    className="btn btn-primary w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Continue
+                                </button>
+                            </>
+                        )}
                     </>
                 )}
 
                 {/* Step 4: Confirm */}
                 {step === 'confirm' && txStatus === 'idle' && (
                     <>
-                        <p className="text-[var(--muted)] text-sm">Review your exchange</p>
+                        <p className="text-[var(--muted)] text-sm">
+                            {isHyperEVMSelected ? 'Review your deposit' : 'Review your exchange'}
+                        </p>
 
                         <div className="space-y-3">
-                            <div className="card bg-black flex items-center justify-between">
-                                <span className="text-[var(--muted)]">From</span>
-                                <span className="font-semibold">{amount} {selectedAsset} on {selectedChainData?.name}</span>
-                            </div>
-                            <div className="card bg-black flex items-center justify-between">
-                                <span className="text-[var(--muted)]">To</span>
-                                <span className="font-semibold text-[var(--accent)]">~{amount} USDC on HyperEVM</span>
-                            </div>
-                            <div className="card bg-black flex items-center justify-between">
-                                <span className="text-[var(--muted)]">Recipient</span>
-                                <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
-                            </div>
+                            {isHyperEVMSelected ? (
+                                <>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">Deposit Amount</span>
+                                        <span className="font-semibold">{amount} USDC</span>
+                                    </div>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">Network</span>
+                                        <span className="font-semibold">HyperEVM</span>
+                                    </div>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">Account</span>
+                                        <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">From</span>
+                                        <span className="font-semibold">{amount} {selectedAsset} on {selectedChainData?.name}</span>
+                                    </div>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">To</span>
+                                        <span className="font-semibold text-[var(--accent)]">~{amount} USDC on HyperEVM</span>
+                                    </div>
+                                    <div className="card bg-black flex items-center justify-between">
+                                        <span className="text-[var(--muted)]">Recipient</span>
+                                        <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         <button
-                            onClick={handleExchange}
+                            onClick={isHyperEVMSelected ? handleDeposit : handleExchange}
                             disabled={isLoading}
                             className="btn btn-accent w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            Confirm Exchange
+                            {isHyperEVMSelected ? 'Confirm Deposit' : 'Confirm Exchange'}
                         </button>
                     </>
                 )}
@@ -487,9 +755,13 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 {txStatus === 'pending' && (
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4 animate-spin">⟳</div>
-                        <h4 className="text-lg font-bold mb-2">Processing Exchange</h4>
+                        <h4 className="text-lg font-bold mb-2">
+                            {isHyperEVMSelected ? 'Processing Deposit' : 'Processing Exchange'}
+                        </h4>
                         <p className="text-[var(--muted)] text-sm">
-                            Bridging {amount} {selectedAsset} to USDC on HyperEVM...
+                            {isHyperEVMSelected 
+                                ? `Depositing ${amount} USDC to your Hyperliquid account...`
+                                : `Bridging ${amount} ${selectedAsset} to USDC on HyperEVM...`}
                         </p>
                     </div>
                 )}
@@ -497,12 +769,16 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 {txStatus === 'success' && (
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4">✓</div>
-                        <h4 className="text-lg font-bold text-[var(--accent)] mb-2">Exchange Successful!</h4>
+                        <h4 className="text-lg font-bold text-[var(--accent)] mb-2">
+                            {isHyperEVMSelected ? 'Deposit Successful!' : 'Exchange Successful!'}
+                        </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
-                            {amount} {selectedAsset} exchanged to USDC on HyperEVM
+                            {isHyperEVMSelected
+                                ? `${amount} USDC transferred from HyperEVM to HyperCore Spot account`
+                                : `${amount} ${selectedAsset} exchanged to USDC on HyperEVM`}
                         </p>
                         <button onClick={resetForm} className="btn btn-secondary">
-                            New Exchange
+                            {isHyperEVMSelected ? 'New Deposit' : 'New Exchange'}
                         </button>
                     </div>
                 )}
@@ -510,7 +786,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 {txStatus === 'error' && (
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4">✗</div>
-                        <h4 className="text-lg font-bold text-[var(--danger)] mb-2">Exchange Failed</h4>
+                        <h4 className="text-lg font-bold text-[var(--danger)] mb-2">
+                            {isHyperEVMSelected ? 'Deposit Failed' : 'Exchange Failed'}
+                        </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
                             {errorMessage}
                         </p>
