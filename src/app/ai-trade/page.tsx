@@ -6,7 +6,7 @@ import { useChat } from '@/hooks/useChat';
 import type { Position } from '@/types/trade';
 
 export default function AITradePage() {
-  const { messages, isLoading, sendMessage, sendModification } = useChat();
+  const { messages, isLoading, acceptedProposalIds, sendMessage, sendModification, acceptTrade } = useChat();
 
   const handleSend = (message: string) => {
     sendMessage(message);
@@ -31,6 +31,17 @@ export default function AITradePage() {
     [sendModification]
   );
 
+  /**
+   * Handle accept trade submission from the modal
+   * Wires the MessageHistory to the useChat acceptTrade function
+   */
+  const handleAcceptSubmit = useCallback(
+    async (proposalId: string, positionSizeUsd: number) => {
+      await acceptTrade(proposalId, positionSizeUsd);
+    },
+    [acceptTrade]
+  );
+
   const handleSelectPrompt = (prompt: string) => {
     sendMessage(prompt);
   };
@@ -48,6 +59,8 @@ export default function AITradePage() {
             messages={messages}
             onModify={handleModify}
             onModifySubmit={handleModifySubmit}
+            onAcceptSubmit={handleAcceptSubmit}
+            acceptedProposalIds={acceptedProposalIds}
             isLoading={isLoading}
           />
         )}

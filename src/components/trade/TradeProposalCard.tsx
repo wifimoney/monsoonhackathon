@@ -13,8 +13,12 @@ interface TradeProposalCardProps {
   onModify: (proposalId: string) => void;
   /** Callback when modal modification is submitted (kept for potential future use) */
   onModifySubmit?: (longPositions: Position[], shortPositions: Position[]) => Promise<void>;
+  /** Callback when Accept button is clicked */
+  onAccept?: (proposal: TradeProposal) => void;
   /** Whether this is the latest proposal (controls button disabled state) */
   isLatest?: boolean;
+  /** Whether this proposal has been accepted (trade placed) */
+  isAccepted?: boolean;
 }
 
 function PositionList({ positions }: { positions: Position[] }) {
@@ -63,19 +67,28 @@ export function TradeProposalCard({
   proposal,
   onModify,
   onModifySubmit: _onModifySubmit, // Available for future modal integration
+  onAccept,
   isLatest = true,
+  isAccepted = false,
 }: TradeProposalCardProps) {
-  const handleAccept = () => {
-    if (!isLatest) return;
+  // Buttons are disabled if not latest OR if already accepted
+  const buttonsDisabled = !isLatest || isAccepted;
 
-    console.log('Trade proposal accepted:', proposal);
-    console.log('Proposal ID:', proposal.id);
-    console.log('Long positions:', proposal.longPositions);
-    console.log('Short positions:', proposal.shortPositions);
+  const handleAccept = () => {
+    if (buttonsDisabled) return;
+
+    if (onAccept) {
+      onAccept(proposal);
+    } else {
+      console.log('Trade proposal accepted:', proposal);
+      console.log('Proposal ID:', proposal.id);
+      console.log('Long positions:', proposal.longPositions);
+      console.log('Short positions:', proposal.shortPositions);
+    }
   };
 
   const handleModify = () => {
-    if (!isLatest) return;
+    if (buttonsDisabled) return;
 
     // Call the onModify callback which will open the modal in MessageHistory
     onModify(proposal.id);
@@ -93,13 +106,13 @@ export function TradeProposalCard({
     cursor: 'pointer' as const,
   };
 
-  const buttonStyle = isLatest ? enabledButtonStyle : disabledButtonStyle;
+  const buttonStyle = buttonsDisabled ? disabledButtonStyle : enabledButtonStyle;
 
   return (
     <div
       className="card p-4 space-y-4"
       style={{
-        opacity: isLatest ? 1 : 0.7,
+        opacity: buttonsDisabled ? 0.7 : 1,
       }}
     >
       {/* Two-column layout for LONG and SHORT */}
@@ -143,15 +156,15 @@ export function TradeProposalCard({
       <div className="flex gap-3">
         <button
           onClick={handleAccept}
-          disabled={!isLatest}
+          disabled={buttonsDisabled}
           className="btn btn-accent flex-1"
           style={buttonStyle}
         >
-          Accept
+          {isAccepted ? 'Trade Placed' : 'Accept'}
         </button>
         <button
           onClick={handleModify}
-          disabled={!isLatest}
+          disabled={buttonsDisabled}
           className="btn btn-secondary flex-1"
           style={buttonStyle}
         >
@@ -159,8 +172,18 @@ export function TradeProposalCard({
         </button>
       </div>
 
+      {/* Indicator for accepted trades */}
+      {isAccepted && (
+        <div
+          className="text-xs text-center"
+          style={{ color: 'var(--accent)' }}
+        >
+          Trade has been placed. This proposal can no longer be modified.
+        </div>
+      )}
+
       {/* Indicator for older proposals */}
-      {!isLatest && (
+      {!isLatest && !isAccepted && (
         <div
           className="text-xs text-center"
           style={{ color: 'var(--muted)' }}

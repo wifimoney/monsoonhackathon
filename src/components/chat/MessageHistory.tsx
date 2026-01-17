@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import type { ChatMessage, TradeProposal, Position } from '@/types/trade';
 import { TradeProposalCard } from '../trade/TradeProposalCard';
 import { TradeModificationModal } from '../trade/TradeModificationModal';
+import { AcceptTradeModal } from '../trade/AcceptTradeModal';
 
 // Hook for typewriter effect
 function useTypewriter(text: string, speed: number = 10) {
@@ -46,6 +47,10 @@ interface MessageHistoryProps {
     longPositions: Position[],
     shortPositions: Position[]
   ) => Promise<void>;
+  /** Callback for accepting a trade with position size */
+  onAcceptSubmit?: (proposalId: string, positionSizeUsd: number) => Promise<void>;
+  /** Set of proposal IDs that have been accepted (trades placed) */
+  acceptedProposalIds?: Set<string>;
   isLoading?: boolean;
 }
 
@@ -62,11 +67,15 @@ export function MessageHistory({
   messages,
   onModify: _onModify, // Kept for backwards compatibility, modal flow uses onModifySubmit
   onModifySubmit,
+  onAcceptSubmit,
+  acceptedProposalIds = new Set(),
   isLoading,
 }: MessageHistoryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [modalProposal, setModalProposal] = useState<TradeProposal | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [acceptModalProposal, setAcceptModalProposal] = useState<TradeProposal | null>(null);
+  const [isAcceptModalOpen, setIsAcceptModalOpen] = useState(false);
 
   // Auto-scroll to newest message or thinking indicator
   useEffect(() => {
@@ -123,6 +132,33 @@ export function MessageHistory({
     [modalProposal, onModifySubmit, handleModalClose]
   );
 
+  /**
+   * Handle Accept button click - open accept modal
+   */
+  const handleAcceptClick = useCallback((proposal: TradeProposal) => {
+    setAcceptModalProposal(proposal);
+    setIsAcceptModalOpen(true);
+  }, []);
+
+  /**
+   * Handle accept modal close
+   */
+  const handleAcceptModalClose = useCallback(() => {
+    setIsAcceptModalOpen(false);
+    setAcceptModalProposal(null);
+  }, []);
+
+  /**
+   * Handle place trade from accept modal
+   */
+  const handlePlaceTrade = useCallback(
+    async (proposalId: string, positionSizeUsd: number) => {
+      if (!onAcceptSubmit) return;
+      await onAcceptSubmit(proposalId, positionSizeUsd);
+    },
+    [onAcceptSubmit]
+  );
+
   if (messages.length === 0) {
     return null;
   }
@@ -140,7 +176,9 @@ export function MessageHistory({
             message={message}
             onModify={handleModifyClick}
             onModifySubmit={onModifySubmit}
+            onAccept={handleAcceptClick}
             isLatest={message.tradeProposal?.id === latestProposalId}
+            isAccepted={message.tradeProposal ? acceptedProposalIds.has(message.tradeProposal.id) : false}
           />
         ))}
         {isLoading && <ThinkingIndicator />}
@@ -152,6 +190,14 @@ export function MessageHistory({
         proposal={modalProposal}
         onClose={handleModalClose}
         onSave={handleModalSave}
+      />
+
+      {/* Accept Trade Modal */}
+      <AcceptTradeModal
+        isOpen={isAcceptModalOpen}
+        proposal={acceptModalProposal}
+        onClose={handleAcceptModalClose}
+        onPlaceTrade={handlePlaceTrade}
       />
     </>
   );
@@ -182,10 +228,12 @@ interface MessageBubbleProps {
     longPositions: Position[],
     shortPositions: Position[]
   ) => Promise<void>;
+  onAccept: (proposal: TradeProposal) => void;
   isLatest: boolean;
+  isAccepted: boolean;
 }
 
-function MessageBubble({ message, onModify, onModifySubmit, isLatest }: MessageBubbleProps) {
+function MessageBubble({ message, onModify, onModifySubmit, onAccept, isLatest, isAccepted }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const { displayedText, isComplete } = useTypewriter(
     isUser ? '' : message.content,
@@ -247,7 +295,9 @@ function MessageBubble({ message, onModify, onModifySubmit, isLatest }: MessageB
               proposal={message.tradeProposal}
               onModify={onModify}
               onModifySubmit={handleModifySubmit}
+              onAccept={onAccept}
               isLatest={isLatest}
+              isAccepted={isAccepted}
             />
           </div>
         )}
