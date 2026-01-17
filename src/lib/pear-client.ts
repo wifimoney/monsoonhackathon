@@ -20,7 +20,8 @@ const TOKEN_STORAGE_KEY = 'pear_tokens';
 const HYPERLIQUID_API_URL = 'https://api.hyperliquid.xyz/exchange';
 const HYPERLIQUID_CHAIN = 'Mainnet';
 const ARBITRUM_CHAIN_ID = '0xa4b1'; // Arbitrum One chain ID in hex
-const MAX_BUILDER_FEE_RATE = '0.01%'; // 1 basis point
+const MAX_BUILDER_FEE_RATE = '0.1%'; // 10 basis points (max for perps) - Pear charges 0.06%
+const PEAR_AGENT_NAME = 'Pear Protocol';
 
 // ============================================================================
 // Types
@@ -125,7 +126,7 @@ export interface HyperliquidApproveAgentAction {
   hyperliquidChain: 'Mainnet' | 'Testnet';
   signatureChainId: string;
   agentAddress: string;
-  agentName: string | null;
+  agentName: string; // Empty string for no name
   nonce: number;
 }
 
@@ -524,7 +525,7 @@ const APPROVE_BUILDER_FEE_TYPES = {
 /**
  * Generate EIP-712 typed data for ApproveAgent action
  * This needs to be signed by the user's wallet
- * Note: Hyperliquid rejects empty string for agentName - must be null or non-empty
+ * Note: Using empty string for agentName to ensure EIP-712 signature encoding matches
  */
 export function getApproveAgentTypedData(agentAddress: string): HyperliquidTypedData {
   const nonce = Date.now();
@@ -536,7 +537,7 @@ export function getApproveAgentTypedData(agentAddress: string): HyperliquidTyped
     message: {
       hyperliquidChain: HYPERLIQUID_CHAIN,
       agentAddress: agentAddress,
-      agentName: null, // null for "no name" - Hyperliquid rejects empty string
+      agentName: PEAR_AGENT_NAME, // Must be "Pear Protocol" for Pear's system
       nonce: nonce,
     },
   };
@@ -596,7 +597,7 @@ export async function submitApproveAgent(
         hyperliquidChain: HYPERLIQUID_CHAIN,
         signatureChainId: ARBITRUM_CHAIN_ID,
         agentAddress: agentAddress,
-        agentName: null, // Must be null to match signed message - Hyperliquid rejects ''
+        agentName: PEAR_AGENT_NAME, // Must match signed message
         nonce: nonce,
       },
       nonce: nonce,
