@@ -5,7 +5,7 @@ import { useAccount } from 'wagmi';
 import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract } from '@wagmi/core';
 import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
 import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche } from 'viem/chains';
-import { wagmiConfig } from '@/lib/wagmi';
+import { wagmiConfig, allChains } from '@/lib/wagmi';
 import { parseUnits } from 'viem';
 
 // HyperEVM chain definition
@@ -197,6 +197,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [showDepositAfterBridge, setShowDepositAfterBridge] = useState(false); // Show deposit option after bridge
     const [progressStep, setProgressStep] = useState<number>(0); // 0 = not started, 1, 2, 3 = steps
     const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
+    const [showDepositDropdown, setShowDepositDropdown] = useState(false); // Deposit dropdown visibility
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
@@ -299,7 +300,36 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             const currentChainId = chain?.id;
             if (currentChainId !== HYPEREVM.chainId) {
                 console.log(`[Deposit] Switching to HyperEVM network...`);
-                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
+                try {
+                    // Get the HyperEVM chain from wagmi config
+                    const hyperEvmChain = allChains.find((c) => c.id === HYPEREVM.chainId);
+                    if (!hyperEvmChain) {
+                        throw new Error('HyperEVM chain not found in wagmi configuration');
+                    }
+                    
+                    // Verify chain exists in config before switching
+                    const targetChain = allChains.find((c) => c.id === HYPEREVM.chainId);
+                    if (!targetChain) {
+                        throw new Error(`Chain ${HYPEREVM.chainId} (HyperEVM) not found in wagmi configuration`);
+                    }
+                    
+                    await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId as any });
+                    
+                    // Wait for chain switch to complete and verify
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    
+                    // Get wallet client with the new chain to verify switch completed
+                    const walletClient = await getWalletClient(wagmiConfig, { chainId: HYPEREVM.chainId });
+                    if (!walletClient) {
+                        throw new Error('Failed to get wallet client for HyperEVM after chain switch. Please ensure you have switched to HyperEVM in your wallet.');
+                    }
+                    
+                    console.log(`[Deposit] Successfully switched to HyperEVM network (Chain ID: ${HYPEREVM.chainId})`);
+                } catch (switchError: any) {
+                    console.error(`[Deposit] Failed to switch chain:`, switchError);
+                    // If switch fails, throw error so user knows they need to switch manually
+                    throw new Error('Failed to switch to HyperEVM network. Please switch manually in your wallet.');
+                }
             }
 
             // Convert amount to token units
