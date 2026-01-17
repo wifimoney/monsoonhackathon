@@ -15,7 +15,7 @@ interface AcceptTradeModalProps {
   /** Callback when modal is closed */
   onClose: () => void;
   /** Callback when trade is placed */
-  onPlaceTrade: (proposalId: string, positionSizeUsd: number) => Promise<void>;
+  onPlaceTrade: (proposalId: string, positionSizeUsd: number, leverage: number) => Promise<void>;
 }
 
 /**
@@ -36,6 +36,7 @@ export function AcceptTradeModal({
   onPlaceTrade,
 }: AcceptTradeModalProps) {
   const [positionSizeUsd, setPositionSizeUsd] = useState<string>('');
+  const [leverage, setLeverage] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +50,7 @@ export function AcceptTradeModal({
   useEffect(() => {
     if (isOpen) {
       setPositionSizeUsd('');
+      setLeverage(1);
       setError(null);
       setIsSubmitting(false);
     }
@@ -93,7 +95,7 @@ export function AcceptTradeModal({
     setIsSubmitting(true);
 
     try {
-      await onPlaceTrade(proposal.id, size);
+      await onPlaceTrade(proposal.id, size, leverage);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to place trade');
@@ -323,6 +325,45 @@ export function AcceptTradeModal({
               {error}
             </div>
           )}
+        </div>
+
+        {/* Leverage Input */}
+        <div className="mb-6">
+          <label
+            className="block text-sm font-medium mb-2"
+            style={{ color: 'var(--foreground)' }}
+          >
+            Leverage
+          </label>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={leverage}
+              onChange={(e) => setLeverage(parseInt(e.target.value, 10))}
+              disabled={isSubmitting}
+              className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${(leverage - 1) / 99 * 100}%, var(--card-border) ${(leverage - 1) / 99 * 100}%, var(--card-border) 100%)`,
+                opacity: isSubmitting ? 0.5 : 1,
+              }}
+            />
+            <span
+              className="text-sm font-mono w-12 text-right"
+              style={{ color: 'var(--foreground)' }}
+            >
+              {leverage}x
+            </span>
+          </div>
+          <div
+            className="flex justify-between text-xs mt-1"
+            style={{ color: 'var(--muted)' }}
+          >
+            <span>1x</span>
+            <span>100x</span>
+          </div>
         </div>
 
         {/* Action buttons */}

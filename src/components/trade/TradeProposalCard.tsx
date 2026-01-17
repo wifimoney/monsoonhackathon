@@ -5,6 +5,7 @@ import type { TradeProposal, Position } from '@/types/trade';
 /**
  * Props for TradeProposalCard component
  * Task 3.8: Updated with isLatest and onModifySubmit props
+ * Task 4.4: Added isExecuting prop for loading states during trade execution
  */
 interface TradeProposalCardProps {
   /** The trade proposal to display */
@@ -19,6 +20,12 @@ interface TradeProposalCardProps {
   isLatest?: boolean;
   /** Whether this proposal has been accepted (trade placed) */
   isAccepted?: boolean;
+  /** Whether a trade is currently being executed (Task 4.4) */
+  isExecuting?: boolean;
+  /** Error message to display after failed execution (Task 4.5) */
+  executionError?: string | null;
+  /** Callback to retry failed execution (Task 4.5) */
+  onRetry?: () => void;
 }
 
 function PositionList({ positions }: { positions: Position[] }) {
@@ -54,6 +61,35 @@ function PositionList({ positions }: { positions: Position[] }) {
 }
 
 /**
+ * Spinner component for loading state
+ * Task 4.4: Show spinner during trade execution
+ */
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin -ml-1 mr-2 h-4 w-4"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
+/**
  * Card component displaying a trade proposal with LONG and SHORT positions.
  *
  * Task 3.8 Updates:
@@ -62,6 +98,11 @@ function PositionList({ positions }: { positions: Position[] }) {
  * - Added cursor: not-allowed style for disabled buttons
  * - Wire Modify button to open TradeModificationModal
  * - Pass onModifySubmit callback for modal save
+ *
+ * Task 4.2-4.5 Updates:
+ * - Added isExecuting prop for loading states
+ * - Show spinner and "Executing..." text during trade execution
+ * - Display error message with retry option on failure
  */
 export function TradeProposalCard({
   proposal,
@@ -70,9 +111,12 @@ export function TradeProposalCard({
   onAccept,
   isLatest = true,
   isAccepted = false,
+  isExecuting = false,
+  executionError = null,
+  onRetry,
 }: TradeProposalCardProps) {
-  // Buttons are disabled if not latest OR if already accepted
-  const buttonsDisabled = !isLatest || isAccepted;
+  // Buttons are disabled if not latest, already accepted, or currently executing
+  const buttonsDisabled = !isLatest || isAccepted || isExecuting;
 
   const handleAccept = () => {
     if (buttonsDisabled) return;
@@ -94,6 +138,12 @@ export function TradeProposalCard({
     onModify(proposal.id);
   };
 
+  const handleRetry = () => {
+    if (onRetry) {
+      onRetry();
+    }
+  };
+
   // Button styles for disabled state
   const disabledButtonStyle = {
     opacity: 0.4,
@@ -106,13 +156,32 @@ export function TradeProposalCard({
     cursor: 'pointer' as const,
   };
 
-  const buttonStyle = buttonsDisabled ? disabledButtonStyle : enabledButtonStyle;
+  // Task 4.4: Executing state style (slightly different from disabled)
+  const executingButtonStyle = {
+    opacity: 0.7,
+    cursor: 'not-allowed' as const,
+  };
+
+  const getButtonStyle = () => {
+    if (isExecuting) return executingButtonStyle;
+    if (buttonsDisabled) return disabledButtonStyle;
+    return enabledButtonStyle;
+  };
+
+  const buttonStyle = getButtonStyle();
+
+  // Determine button text based on state
+  const getAcceptButtonText = () => {
+    if (isAccepted) return 'Trade Placed';
+    if (isExecuting) return 'Executing...';
+    return 'Accept';
+  };
 
   return (
     <div
       className="card p-4 space-y-4"
       style={{
-        opacity: buttonsDisabled ? 0.7 : 1,
+        opacity: buttonsDisabled && !isExecuting ? 0.7 : 1,
       }}
     >
       {/* Two-column layout for LONG and SHORT */}
@@ -152,15 +221,49 @@ export function TradeProposalCard({
         </div>
       </div>
 
+      {/* Task 4.5: Error message with retry option */}
+      {executionError && (
+        <div
+          className="p-3 rounded-lg border"
+          style={{
+            borderColor: 'var(--danger)',
+            backgroundColor: 'rgba(var(--danger-rgb), 0.1)',
+          }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1">
+              <div
+                className="text-sm font-medium mb-1"
+                style={{ color: 'var(--danger)' }}
+              >
+                Trade Execution Failed
+              </div>
+              <div className="text-xs" style={{ color: 'var(--muted)' }}>
+                {executionError}
+              </div>
+            </div>
+            {onRetry && (
+              <button
+                onClick={handleRetry}
+                className="btn btn-secondary py-1 px-3 text-xs"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="flex gap-3">
         <button
           onClick={handleAccept}
           disabled={buttonsDisabled}
-          className="btn btn-accent flex-1"
+          className="btn btn-accent flex-1 flex items-center justify-center"
           style={buttonStyle}
         >
-          {isAccepted ? 'Trade Placed' : 'Accept'}
+          {isExecuting && <Spinner />}
+          {getAcceptButtonText()}
         </button>
         <button
           onClick={handleModify}

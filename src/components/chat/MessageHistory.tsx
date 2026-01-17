@@ -7,6 +7,15 @@ import { TradeProposalCard } from '../trade/TradeProposalCard';
 import { TradeModificationModal } from '../trade/TradeModificationModal';
 import { AcceptTradeModal } from '../trade/AcceptTradeModal';
 
+/**
+ * Execution state for a proposal
+ * Task 4.4: Track per-proposal execution state
+ */
+interface ExecutionState {
+  isExecuting: boolean;
+  error: string | null;
+}
+
 // Hook for typewriter effect
 function useTypewriter(text: string, speed: number = 10) {
   const [displayedText, setDisplayedText] = useState('');
@@ -36,6 +45,7 @@ function useTypewriter(text: string, speed: number = 10) {
 /**
  * Props for MessageHistory component
  * Task 3.9: Updated to handle modal state and modification submission
+ * Task 4.4-4.5: Updated to handle execution states
  */
 interface MessageHistoryProps {
   messages: ChatMessage[];
@@ -47,10 +57,16 @@ interface MessageHistoryProps {
     longPositions: Position[],
     shortPositions: Position[]
   ) => Promise<void>;
-  /** Callback for accepting a trade with position size */
-  onAcceptSubmit?: (proposalId: string, positionSizeUsd: number) => Promise<void>;
+  /** Callback for accepting a trade with position size and leverage */
+  onAcceptSubmit?: (proposalId: string, positionSizeUsd: number, leverage: number) => Promise<void>;
   /** Set of proposal IDs that have been accepted (trades placed) */
   acceptedProposalIds?: Set<string>;
+  /** Map of proposal IDs to execution states (Task 4.4) */
+  executionStates?: Map<string, ExecutionState>;
+  /** Get execution state for a proposal (Task 4.4) */
+  getExecutionState?: (proposalId: string) => ExecutionState;
+  /** Callback to retry a failed trade execution (Task 4.5) */
+  onRetryTrade?: (proposalId: string, positionSizeUsd: number, leverage: number) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -62,6 +78,10 @@ interface MessageHistoryProps {
  * - Pass isLatest prop to TradeProposalCard
  * - Handle modal open/close state
  * - Wire modal save to sendModification function
+ *
+ * Task 4.4-4.5 Updates:
+ * - Pass execution states to TradeProposalCard
+ * - Support retry functionality for failed trades
  */
 export function MessageHistory({
   messages,
@@ -69,6 +89,9 @@ export function MessageHistory({
   onModifySubmit,
   onAcceptSubmit,
   acceptedProposalIds = new Set(),
+  executionStates = new Map(),
+  getExecutionState,
+  onRetryTrade,
   isLoading,
 }: MessageHistoryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +99,8 @@ export function MessageHistory({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [acceptModalProposal, setAcceptModalProposal] = useState<TradeProposal | null>(null);
   const [isAcceptModalOpen, setIsAcceptModalOpen] = useState(false);
+  // Track trade params (size and leverage) for retry functionality
+  const [lastTradeParams, setLastTradeParams] = useState<Map<string, { size: number; leverage: number }>>(new Map());
 
   // Auto-scroll to newest message or thinking indicator
   useEffect(() => {
@@ -152,11 +177,45 @@ export function MessageHistory({
    * Handle place trade from accept modal
    */
   const handlePlaceTrade = useCallback(
-    async (proposalId: string, positionSizeUsd: number) => {
+    async (proposalId: string, positionSizeUsd: number, leverage: number) => {
       if (!onAcceptSubmit) return;
-      await onAcceptSubmit(proposalId, positionSizeUsd);
+      // Store the trade params for potential retry
+      setLastTradeParams(prev => {
+        const next = new Map(prev);
+        next.set(proposalId, { size: positionSizeUsd, leverage });
+        return next;
+      });
+      await onAcceptSubmit(proposalId, positionSizeUsd, leverage);
     },
     [onAcceptSubmit]
+  );
+
+  /**
+   * Handle retry for a failed trade
+   * Task 4.5: Allow retry on error
+   */
+  const handleRetry = useCallback(
+    (proposalId: string) => {
+      if (!onRetryTrade) return;
+      const tradeParams = lastTradeParams.get(proposalId);
+      if (tradeParams) {
+        onRetryTrade(proposalId, tradeParams.size, tradeParams.leverage);
+      }
+    },
+    [onRetryTrade, lastTradeParams]
+  );
+
+  /**
+   * Get execution state for a proposal
+   */
+  const getProposalExecutionState = useCallback(
+    (proposalId: string): ExecutionState => {
+      if (getExecutionState) {
+        return getExecutionState(proposalId);
+      }
+      return executionStates.get(proposalId) || { isExecuting: false, error: null };
+    },
+    [getExecutionState, executionStates]
   );
 
   if (messages.length === 0) {
@@ -179,6 +238,8 @@ export function MessageHistory({
             onAccept={handleAcceptClick}
             isLatest={message.tradeProposal?.id === latestProposalId}
             isAccepted={message.tradeProposal ? acceptedProposalIds.has(message.tradeProposal.id) : false}
+            executionState={message.tradeProposal ? getProposalExecutionState(message.tradeProposal.id) : undefined}
+            onRetry={message.tradeProposal ? () => handleRetry(message.tradeProposal!.id) : undefined}
           />
         ))}
         {isLoading && <ThinkingIndicator />}
@@ -231,9 +292,20 @@ interface MessageBubbleProps {
   onAccept: (proposal: TradeProposal) => void;
   isLatest: boolean;
   isAccepted: boolean;
+  executionState?: ExecutionState;
+  onRetry?: () => void;
 }
 
-function MessageBubble({ message, onModify, onModifySubmit, onAccept, isLatest, isAccepted }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  onModify,
+  onModifySubmit,
+  onAccept,
+  isLatest,
+  isAccepted,
+  executionState,
+  onRetry,
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const { displayedText, isComplete } = useTypewriter(
     isUser ? '' : message.content,
@@ -298,6 +370,9 @@ function MessageBubble({ message, onModify, onModifySubmit, onAccept, isLatest, 
               onAccept={onAccept}
               isLatest={isLatest}
               isAccepted={isAccepted}
+              isExecuting={executionState?.isExecuting}
+              executionError={executionState?.error}
+              onRetry={onRetry}
             />
           </div>
         )}
