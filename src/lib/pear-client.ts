@@ -114,13 +114,50 @@ export interface PearPosition {
 }
 
 /**
- * Portfolio metrics
+ * Portfolio metrics (normalized for UI display)
  */
 export interface PortfolioMetrics {
-  totalAccountValue: number;
+  totalPositionsValue: number;
+  availableBalance: number;
   totalUnrealizedPnL: number;
   totalRealizedPnL: number;
   marginUsage: number;
+  // Legacy field for backwards compatibility
+  totalAccountValue?: number;
+}
+
+/**
+ * Actual API response from GET /portfolio
+ */
+interface PortfolioApiResponse {
+  intervals: {
+    oneDay: PortfolioBucket[];
+    oneWeek: PortfolioBucket[];
+    oneMonth: PortfolioBucket[];
+    oneYear: PortfolioBucket[];
+    all: PortfolioBucket[];
+  };
+  overall: {
+    totalWinningTradesCount: number;
+    totalLosingTradesCount: number;
+    totalWinningUsd: number;
+    totalLosingUsd: number;
+    currentOpenInterest: number;
+    currentTotalVolume: number;
+    unrealizedPnl: number;
+    totalTrades: number;
+  };
+}
+
+interface PortfolioBucket {
+  periodStart: string;
+  periodEnd: string;
+  volume: number;
+  openInterest: number;
+  winningTradesCount: number;
+  winningTradesUsd: number;
+  losingTradesCount: number;
+  losingTradesUsd: number;
 }
 
 /**
@@ -818,7 +855,9 @@ export async function closePosition(
     `/positions/${positionId}/close`,
     {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        executionType: 'MARKET',
+      }),
     }
   );
 }
@@ -828,13 +867,105 @@ export async function closePosition(
 // ============================================================================
 
 /**
+ * Hyperliquid Info API URL
+ */
+const HYPERLIQUID_INFO_URL = 'https://api.hyperliquid.xyz/info';
+
+/**
+ * Hyperliquid clearinghouse state response
+ */
+interface HyperliquidClearinghouseState {
+  marginSummary: {
+    accountValue: string;
+    totalNtlPos: string;
+    totalRawUsd: string;
+    totalMarginUsed: string;
+  };
+  crossMarginSummary: {
+    accountValue: string;
+    totalNtlPos: string;
+    totalRawUsd: string;
+    totalMarginUsed: string;
+  };
+  withdrawable: string;
+  assetPositions: unknown[];
+}
+
+/**
+ * Get Hyperliquid account state including available balance
+ * This queries Hyperliquid's info API directly (public, no auth required)
+ */
+export async function getHyperliquidAccountState(address: string): Promise<{
+  accountValue: number;
+  withdrawable: number;
+  totalMarginUsed: number;
+} | null> {
+  try {
+    const response = await fetch(HYPERLIQUID_INFO_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'clearinghouseState',
+        user: address,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[getHyperliquidAccountState] Error:', response.status);
+      return null;
+    }
+
+    const data: HyperliquidClearinghouseState = await response.json();
+    console.log('[getHyperliquidAccountState] Response:', data);
+
+    return {
+      accountValue: parseFloat(data.marginSummary?.accountValue ?? '0'),
+      withdrawable: parseFloat(data.withdrawable ?? '0'),
+      totalMarginUsed: parseFloat(data.marginSummary?.totalMarginUsed ?? '0'),
+    };
+  } catch (error) {
+    console.error('[getHyperliquidAccountState] Error:', error);
+    return null;
+  }
+}
+
+/**
  * Get portfolio metrics
  * GET /portfolio
+ * Maps API response to normalized PortfolioMetrics format
  */
 export async function getPortfolio(): Promise<PortfolioMetrics> {
-  return authenticatedRequest<PortfolioMetrics>('/portfolio', {
+  const response = await authenticatedRequest<PortfolioApiResponse>('/portfolio', {
     method: 'GET',
   });
+
+  console.log('[getPortfolio] Raw API response:', response);
+
+  // Map API response to PortfolioMetrics
+  const overall = response?.overall;
+  if (!overall) {
+    console.warn('[getPortfolio] No overall data in response');
+    return {
+      totalPositionsValue: 0,
+      availableBalance: 0,
+      totalUnrealizedPnL: 0,
+      totalRealizedPnL: 0,
+      marginUsage: 0,
+    };
+  }
+
+  // Calculate realized P&L as winning - losing
+  const realizedPnL = (overall.totalWinningUsd ?? 0) - (overall.totalLosingUsd ?? 0);
+
+  return {
+    totalPositionsValue: overall.currentOpenInterest ?? 0,
+    availableBalance: 0, // Will be fetched from Hyperliquid API separately
+    totalUnrealizedPnL: overall.unrealizedPnl ?? 0,
+    totalRealizedPnL: realizedPnL,
+    marginUsage: 0, // API doesn't provide margin usage directly
+  };
 }
 
 /**

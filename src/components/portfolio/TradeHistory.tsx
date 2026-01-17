@@ -68,10 +68,20 @@ function formatTimestamp(timestamp: string | undefined | null): string {
 
 /**
  * Get pair string from trade assets
- * Handles closedLongAssets and closedShortAssets from current API
+ * Prioritizes positionLongAssets/positionShortAssets (original position symbols)
+ * Falls back to closedLongAssets/closedShortAssets (what was actually closed)
  */
 function getTradePairString(trade: TradeHistoryEntry): string {
-  // Try to build pair from closedLongAssets/closedShortAssets (current API format)
+  // First try positionLongAssets/positionShortAssets - these are the original position symbols
+  // and should always contain both sides of the pair
+  if (trade.positionLongAssets && trade.positionLongAssets.length > 0 &&
+      trade.positionShortAssets && trade.positionShortAssets.length > 0) {
+    const longStr = trade.positionLongAssets.join(',');
+    const shortStr = trade.positionShortAssets.join(',');
+    return `${longStr}/${shortStr}`;
+  }
+
+  // Fall back to closedLongAssets/closedShortAssets
   const getLongCoins = () => {
     if (trade.closedLongAssets && trade.closedLongAssets.length > 0) {
       return trade.closedLongAssets.map((a) => a.coin).join(',');
@@ -97,6 +107,14 @@ function getTradePairString(trade: TradeHistoryEntry): string {
 
   if (longStr && shortStr) {
     return `${longStr}/${shortStr}`;
+  }
+
+  // If only one side has data, show just that asset
+  if (longStr) {
+    return longStr;
+  }
+  if (shortStr) {
+    return shortStr;
   }
 
   // Fall back to legacy fields

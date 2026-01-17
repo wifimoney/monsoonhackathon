@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount } from 'wagmi';
 import { PositionsTable, TradeHistory, PortfolioMetrics } from '@/components/portfolio';
 import { usePearWebSocket } from '@/hooks/usePearWebSocket';
@@ -8,6 +8,7 @@ import {
   getPositions,
   getTradeHistory,
   getPortfolio,
+  getHyperliquidAccountState,
   closePosition,
   isAuthenticated,
   type PearPosition,
@@ -45,6 +46,7 @@ export default function PortfolioPage() {
   const [positions, setPositions] = useState<PearPosition[]>([]);
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryEntry[]>([]);
   const [metrics, setMetrics] = useState<PortfolioMetricsType | null>(null);
+  const [hyperliquidBalance, setHyperliquidBalance] = useState<number>(0);
 
   // Loading states
   const [positionsLoading, setPositionsLoading] = useState(true);
@@ -111,7 +113,19 @@ export default function PortfolioPage() {
     } finally {
       setMetricsLoading(false);
     }
-  }, []);
+
+    // Fetch Hyperliquid account state for available balance
+    if (address) {
+      try {
+        const hlState = await getHyperliquidAccountState(address);
+        if (hlState) {
+          setHyperliquidBalance(hlState.withdrawable);
+        }
+      } catch (err) {
+        console.error('Failed to fetch Hyperliquid account state:', err);
+      }
+    }
+  }, [address]);
 
   /**
    * Handle closing a position
@@ -176,7 +190,52 @@ export default function PortfolioPage() {
   // API only returns OPEN positions, no need to filter by status
   const displayPositions = wsPositions.length > 0 ? wsPositions : positions;
   const displayTradeHistory = wsTradeHistory.length > 0 ? wsTradeHistory : tradeHistory;
-  const displayMetrics = wsAccountSummary || metrics;
+
+  // Calculate metrics from positions and trade history if API metrics are empty/zero
+  const calculatedMetrics = useMemo(() => {
+    if (displayPositions.length === 0 && displayTradeHistory.length === 0 && hyperliquidBalance === 0) return null;
+
+    let totalPositionsValue = 0;
+    let totalUnrealizedPnL = 0;
+    let totalMarginUsed = 0;
+
+    for (const pos of displayPositions) {
+      totalPositionsValue += pos.positionValue ?? pos.size ?? 0;
+      totalUnrealizedPnL += pos.unrealizedPnl ?? pos.unrealizedPnL ?? 0;
+      totalMarginUsed += pos.marginUsed ?? 0;
+    }
+
+    // Calculate realized P&L from trade history
+    let totalRealizedPnL = 0;
+    for (const trade of displayTradeHistory) {
+      totalRealizedPnL += trade.realizedPnl ?? trade.realizedPnL ?? trade.pnl ?? 0;
+    }
+
+    return {
+      totalPositionsValue: totalPositionsValue,
+      availableBalance: hyperliquidBalance, // Use actual Hyperliquid withdrawable balance
+      totalUnrealizedPnL: totalUnrealizedPnL,
+      totalRealizedPnL: totalRealizedPnL,
+      marginUsage: totalPositionsValue > 0 ? totalMarginUsed / totalPositionsValue : 0,
+    };
+  }, [displayPositions, displayTradeHistory, hyperliquidBalance]);
+
+  // Use calculated metrics if API metrics show zeros but we have positions
+  const displayMetrics = useMemo(() => {
+    const apiMetrics = wsAccountSummary || metrics;
+
+    // If API returned valid data, use it but override availableBalance with Hyperliquid value
+    const apiPositionsValue = apiMetrics?.totalPositionsValue ?? apiMetrics?.totalAccountValue ?? 0;
+    if (apiMetrics && (apiPositionsValue > 0 || apiMetrics.totalUnrealizedPnL !== 0)) {
+      return {
+        ...apiMetrics,
+        availableBalance: hyperliquidBalance, // Always use Hyperliquid withdrawable balance
+      };
+    }
+
+    // Fall back to calculated metrics from positions
+    return calculatedMetrics || apiMetrics;
+  }, [wsAccountSummary, metrics, calculatedMetrics, hyperliquidBalance]);
 
   return (
     <div className="space-y-8">
