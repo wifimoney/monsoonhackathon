@@ -2,8 +2,8 @@
 
 import type { ActionIntent, MarketMatch, GuardrailsResult } from '@/agent/types';
 
-interface Props {
-    preview: {
+interface TradePreviewProps {
+    data: {
         actionIntent: ActionIntent;
         matches: MarketMatch[];
         guardrailsCheck: GuardrailsResult | null;
@@ -15,16 +15,22 @@ interface Props {
 export function TradePreview({ data, onExecute, isLoading }: TradePreviewProps) {
     if (!data) return null;
 
-    const { intent, matches, estimatedPrice, estimatedFees, guardrailsCheck } = data;
+    const { actionIntent, matches, guardrailsCheck } = data;
 
     // Default to passed if no check results yet
     const guardrailsPassed = guardrailsCheck?.passed ?? true;
     const warnings = guardrailsCheck?.warnings || [];
     const issues = guardrailsCheck?.issues || [];
-
-    // Original hasIssues logic: const hasIssues = guardrailsCheck && !guardrailsCheck.passed;
-    // New logic based on guardrailsPassed:
     const hasIssues = !guardrailsPassed;
+
+    // Safely extract properties from Union type
+    const market = 'market' in actionIntent ? actionIntent.market : 'N/A';
+    const side = 'side' in actionIntent ? actionIntent.side : undefined;
+    const notionalUsd = 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0);
+    const maxSlippage = 'maxSlippageBps' in actionIntent ? actionIntent.maxSlippageBps : 0;
+    const rationale = 'rationale' in actionIntent ? actionIntent.rationale : [];
+    const riskNotes = 'riskNotes' in actionIntent ? actionIntent.riskNotes : [];
+    const typeLabel = actionIntent.type.replace(/_/g, ' ');
 
     return (
         <div className="card flex flex-col">
@@ -32,23 +38,25 @@ export function TradePreview({ data, onExecute, isLoading }: TradePreviewProps) 
 
             {/* Main details */}
             <div className="space-y-3">
-                <Row label="Market" value={actionIntent.market} />
-                <Row
-                    label="Side"
-                    value={actionIntent.side}
-                    valueClass={actionIntent.side === 'BUY' ? 'text-green-400' : 'text-red-400'}
-                />
-                <Row label="Size" value={`$${actionIntent.notionalUsd}`} highlight />
-                <Row label="Max Slippage" value={`${actionIntent.maxSlippageBps / 100}%`} />
-                <Row label="Type" value={actionIntent.type.replace(/_/g, ' ')} />
+                <Row label="Type" value={typeLabel} />
+                {market !== 'N/A' && <Row label="Market" value={market} />}
+                {side && (
+                    <Row
+                        label="Side"
+                        value={side}
+                        valueClass={side === 'BUY' ? 'text-green-400' : 'text-red-400'}
+                    />
+                )}
+                <Row label="Size" value={`$${notionalUsd}`} highlight />
+                {maxSlippage > 0 && <Row label="Max Slippage" value={`${maxSlippage / 100}%`} />}
             </div>
 
             {/* Rationale */}
-            {actionIntent.rationale?.length > 0 && (
+            {rationale && rationale.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-[var(--card-border)]">
                     <p className="text-xs text-[var(--muted)] mb-2">Why this trade:</p>
                     <ul className="text-xs text-white/70 space-y-1">
-                        {actionIntent.rationale.map((r: string, i: number) => (
+                        {rationale.map((r: string, i: number) => (
                             <li key={i} className="flex items-start gap-1">
                                 <span className="text-green-400">✓</span> {r}
                             </li>
@@ -58,10 +66,10 @@ export function TradePreview({ data, onExecute, isLoading }: TradePreviewProps) 
             )}
 
             {/* Risk notes */}
-            {actionIntent.riskNotes?.length > 0 && (
+            {riskNotes && riskNotes.length > 0 && (
                 <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
                     <p className="text-xs text-yellow-400 flex items-center gap-1">
-                        <span>⚠️</span> {actionIntent.riskNotes.join(' | ')}
+                        <span>⚠️</span> {riskNotes.join(' | ')}
                     </p>
                 </div>
             )}
@@ -71,7 +79,7 @@ export function TradePreview({ data, onExecute, isLoading }: TradePreviewProps) 
                 <div className="mt-3 p-3 bg-red-900/20 border border-red-800/50 rounded-lg">
                     <p className="text-xs text-red-400 font-medium mb-1">Guardrails issue:</p>
                     <ul className="text-xs text-red-300">
-                        {guardrailsCheck.issues.map((issue: string, i: number) => (
+                        {issues.map((issue: string, i: number) => (
                             <li key={i} className="flex items-start gap-1">
                                 <span>✗</span> {issue}
                             </li>
@@ -81,10 +89,10 @@ export function TradePreview({ data, onExecute, isLoading }: TradePreviewProps) 
             )}
 
             {/* Guardrails warnings */}
-            {guardrailsCheck?.warnings?.length > 0 && (
+            {warnings.length > 0 && (
                 <div className="mt-2 p-2 bg-yellow-900/10 border border-yellow-800/30 rounded">
                     <ul className="text-xs text-yellow-400/80">
-                        {guardrailsCheck.warnings.map((w: string, i: number) => (
+                        {warnings.map((w: string, i: number) => (
                             <li key={i}>⚡ {w}</li>
                         ))}
                     </ul>

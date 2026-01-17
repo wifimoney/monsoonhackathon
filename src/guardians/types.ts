@@ -59,16 +59,12 @@ export interface TimeWindowConfig {
     enabled: boolean;
     startHour: number; // 0-23 UTC
     endHour: number;   // 0-23 UTC
-    // Dev toggle for demo
-    simulateOutsideHours?: boolean;
 }
 
 export interface LossConfig {
     enabled: boolean;
     maxDrawdown: number;
     halted: boolean;
-    // Dev toggle for demo
-    simulateDrawdownBreach?: boolean;
 }
 
 // ============ STRATEGY CONFIG ============

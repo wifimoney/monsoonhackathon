@@ -75,26 +75,25 @@ export interface TradePreview {
 // Guardrails Types
 // ============================================
 
-export interface GuardrailsConfig {
-    allowedMarkets: string[];
-    maxPerTx: number;
-    cooldownSeconds: number;
-    maxSlippageBps: number;
+import type { GuardiansConfig, GuardianCheckResult } from '@/guardians/types';
+
+// ============================================
+// Guardrails Types
+// ============================================
+
+export type { GuardiansConfig, GuardianCheckResult };
+
+
+export interface MonsoonAgentConfig {
+    accountId: string;
+    guardrails: GuardiansConfig;
 }
 
 export interface GuardrailsResult {
     passed: boolean;
     issues: string[];
     warnings: string[];
-}
-
-// ============================================
-// Agent Config Types
-// ============================================
-
-export interface MonsoonAgentConfig {
-    accountId: string;
-    guardrails: GuardrailsConfig;
+    denials?: any[]; // Allow generic denials for compatibility
 }
 
 export interface ExecutionResult {

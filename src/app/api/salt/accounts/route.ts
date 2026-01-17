@@ -21,13 +21,32 @@ export async function GET() {
         }
 
         // Get accounts from first org (or could be configured)
-        const orgId = orgs[0]._id;
-        const accounts = await client.getAccounts(orgId);
+        // Find an org with accounts
+        let accounts: any[] = [];
+        let orgId = '';
+        let orgName = '';
+
+        for (const org of orgs) {
+            const orgAccounts = await client.getAccounts(org._id);
+            if (orgAccounts.length > 0) {
+                accounts = orgAccounts;
+                orgId = org._id;
+                orgName = org.name;
+                break;
+            }
+        }
+
+        // If no accounts found in any org, default to first org info (empty)
+        if (accounts.length === 0 && orgs.length > 0) {
+            orgId = orgs[0]._id;
+            orgName = orgs[0].name;
+            accounts = [];
+        }
 
         return NextResponse.json({
             success: true,
             orgId,
-            orgName: orgs[0].name,
+            orgName,
             accounts,
             totalOrgs: orgs.length,
         });
