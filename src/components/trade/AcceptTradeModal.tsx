@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAccount, useConnect } from 'wagmi';
 import type { TradeProposal } from '@/types/trade';
 
 /**
@@ -26,6 +27,7 @@ interface AcceptTradeModalProps {
  * - "Place Trade" button
  * - Loading state while submitting
  * - Escape key and backdrop click to close
+ * - Inline wallet connection check and connect UI
  */
 export function AcceptTradeModal({
   proposal,
@@ -36,6 +38,10 @@ export function AcceptTradeModal({
   const [positionSizeUsd, setPositionSizeUsd] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Wallet connection state
+  const { isConnected } = useAccount();
+  const { connectors, connect, isPending } = useConnect();
 
   /**
    * Reset state when modal opens
@@ -113,7 +119,8 @@ export function AcceptTradeModal({
     return null;
   }
 
-  const isValid = positionSizeUsd !== '' && parseFloat(positionSizeUsd) > 0;
+  // Validation includes wallet connection check
+  const isValid = isConnected && positionSizeUsd !== '' && parseFloat(positionSizeUsd) > 0;
 
   return (
     <div
@@ -156,6 +163,78 @@ export function AcceptTradeModal({
             </svg>
           </button>
         </div>
+
+        {/* Wallet Connection Warning - Show when not connected */}
+        {!isConnected && (
+          <div
+            className="mb-6 p-4 rounded-lg"
+            style={{
+              background: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+            }}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              {/* Warning Icon */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span
+                className="font-medium"
+                style={{ color: '#f59e0b' }}
+              >
+                Please connect your wallet
+              </span>
+            </div>
+            {/* Connect Wallet Buttons */}
+            <div className="flex flex-wrap gap-2">
+              {connectors.map((connector) => (
+                <button
+                  key={connector.uid}
+                  onClick={() => connect({ connector })}
+                  disabled={isPending}
+                  className="btn btn-primary py-2 px-4 text-sm flex items-center gap-2"
+                  style={{
+                    opacity: isPending ? 0.7 : 1,
+                    cursor: isPending ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isPending ? (
+                    <>
+                      <span className="animate-spin">&#8635;</span>
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                      Connect {connector.name}
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Trade Summary */}
         <div className="mb-6 space-y-4">
