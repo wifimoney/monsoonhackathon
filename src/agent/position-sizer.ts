@@ -1,5 +1,5 @@
 import { getSpendingState } from './spending-tracker';
-import type { ActionIntent, MarketMatch, GuardrailsConfig } from './types';
+import type { MarketMatch, GuardiansConfig } from './types';
 
 // ============ TYPES ============
 export interface PositionSizeRecommendation {
@@ -22,14 +22,14 @@ export interface PositionSizeRecommendation {
 // ============ CALCULATOR ============
 export function calculateOptimalPosition(
     market: MarketMatch,
-    guardrailsConfig: GuardrailsConfig,
+    guardrailsConfig: GuardiansConfig,
     requestedSize?: number
 ): PositionSizeRecommendation {
     const constraints: PositionSizeRecommendation['constraints'] = [];
     const reasoning: string[] = [];
 
     // 1. Per-transaction limit
-    const perTxLimit = guardrailsConfig.maxPerTx || 250;
+    const perTxLimit = guardrailsConfig.spend.maxPerTrade || 250;
     constraints.push({
         name: 'Per-Transaction',
         limit: perTxLimit,

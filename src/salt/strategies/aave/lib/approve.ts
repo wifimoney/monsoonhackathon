@@ -1,6 +1,6 @@
 import { formatEther } from "ethers/lib/utils";
 import { aaveContract, aaveWETHContract } from "..";
-import { sendTransaction } from "../../../salt";
+import { sendTransaction } from "../../..";
 import { BigNumber } from "ethers";
 
 /**

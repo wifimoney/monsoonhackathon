@@ -32,33 +32,40 @@ export interface MarketMatch {
 // Action Intent Types
 // ============================================
 
+// Base type for market-based intents
+interface MarketIntent {
+    market: string;
+    notionalUsd: number;
+    side: 'BUY' | 'SELL';
+}
+
 export type ActionIntent =
-    | {
+    | (MarketIntent & {
         type: 'SPOT_MARKET_ORDER' | 'SPOT_LIMIT_ORDER';
-        market: string;
-        side: 'BUY' | 'SELL';
-        notionalUsd: number;
         maxSlippageBps: number;
         validForSeconds: number;
         rationale: string[];
         riskNotes: string[];
-    }
-    | {
+    })
+    | (MarketIntent & {
         type: 'SPOT_BUY';
-        market: string;
-        amount: number;
-    }
-    | {
+        side: 'BUY';
+    })
+    | (MarketIntent & {
         type: 'SPOT_SELL';
-        market: string;
-        amount: number;
-    }
+        side: 'SELL';
+    })
     | {
         type: 'TRANSFER';
         amount: number;
         token: string;
         to: string;
     };
+
+// Helper type guard for market intents
+export function isMarketIntent(intent: ActionIntent): intent is Exclude<ActionIntent, { type: 'TRANSFER' }> {
+    return intent.type !== 'TRANSFER';
+}
 
 export interface TradePreview {
     intent: ActionIntent;

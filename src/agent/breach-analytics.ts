@@ -56,7 +56,10 @@ export function getBreachAnalytics(): BreachAnalytics {
 
     // Group by market
     const byMarket = lastWeek.reduce((acc, b) => {
-        const market = b.actionIntent.market.split('/')[0];
+        // Handle TRANSFER intents which don't have a market
+        const market = b.actionIntent.type === 'TRANSFER'
+            ? 'TRANSFER'
+            : b.actionIntent.market.split('/')[0];
         acc[market] = (acc[market] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);

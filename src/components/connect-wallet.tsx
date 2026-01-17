@@ -6,16 +6,6 @@ import { useAccount, useDisconnect } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { CrossChainExchange } from './cross-chain-exchange';
 
-// Extend Window interface for ethereum provider
-declare global {
-    interface Window {
-        ethereum?: {
-            request: (args: { method: string; params?: any[] }) => Promise<any>;
-            isMetaMask?: boolean;
-        };
-    }
-}
-
 export function ConnectWallet() {
     const { address, isConnected, chain, connector } = useAccount();
     const { disconnect } = useDisconnect();
@@ -104,7 +94,7 @@ export function ConnectWallet() {
                             {chain?.name || 'Unknown Chain'}
                         </span>
                     </div>
-                    
+
                     {/* Wallet Address Selector */}
                     {availableAddresses.length > 1 && (
                         <div className="relative" ref={walletSelectorRef}>
@@ -113,7 +103,7 @@ export function ConnectWallet() {
                                 className="card py-2 px-3 flex items-center gap-2 hover:border-[var(--primary)] transition-colors"
                             >
                                 <span className="font-mono text-sm">
-                        {address.slice(0, 6)}...{address.slice(-4)}
+                                    {address.slice(0, 6)}...{address.slice(-4)}
                                 </span>
                                 <svg
                                     width="12"
@@ -127,7 +117,7 @@ export function ConnectWallet() {
                                     <path d="M3 4.5L6 7.5L9 4.5" />
                                 </svg>
                             </button>
-                            
+
                             {showWalletSelector && (
                                 <div className="absolute right-0 mt-2 w-72 card shadow-lg z-50 max-h-96 overflow-y-auto">
                                     <div className="px-4 py-3 border-b border-[var(--card-border)]">
@@ -146,18 +136,16 @@ export function ConnectWallet() {
                                                     // Note: Actual switching would require wallet support
                                                     setShowWalletSelector(false);
                                                 }}
-                                                className={`w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center justify-between gap-3 ${
-                                                    addr.toLowerCase() === address?.toLowerCase() 
-                                                        ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]' 
+                                                className={`w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center justify-between gap-3 ${addr.toLowerCase() === address?.toLowerCase()
+                                                        ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]'
                                                         : ''
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                                        addr.toLowerCase() === address?.toLowerCase() 
-                                                            ? 'bg-[var(--primary)]' 
+                                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${addr.toLowerCase() === address?.toLowerCase()
+                                                            ? 'bg-[var(--primary)]'
                                                             : 'bg-[var(--muted)]'
-                                                    }`} />
+                                                        }`} />
                                                     <span className="font-mono text-sm truncate">
                                                         {addr.slice(0, 6)}...{addr.slice(-4)}
                                                     </span>
@@ -178,14 +166,14 @@ export function ConnectWallet() {
                                             }}
                                             className="w-full btn btn-secondary py-2 text-sm"
                                         >
-                        Disconnect
+                                            Disconnect
                                         </button>
                                     </div>
                                 </div>
                             )}
                         </div>
                     )}
-                    
+
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setShowFundMenu(!showFundMenu)}

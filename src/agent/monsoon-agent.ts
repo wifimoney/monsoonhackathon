@@ -36,7 +36,8 @@ export class MonsoonAgent {
         if (buyMatch) {
             return {
                 type: 'SPOT_BUY',
-                amount: parseFloat(buyMatch[1]),
+                side: 'BUY',
+                notionalUsd: parseFloat(buyMatch[1]),
                 market: buyMatch[2].toUpperCase(),
             };
         }
@@ -46,7 +47,8 @@ export class MonsoonAgent {
         if (sellMatch) {
             return {
                 type: 'SPOT_SELL',
-                amount: parseFloat(sellMatch[1]),
+                side: 'SELL',
+                notionalUsd: parseFloat(sellMatch[1]),
                 market: sellMatch[2].toUpperCase(),
             };
         }
@@ -71,26 +73,30 @@ export class MonsoonAgent {
      * This runs BEFORE Salt to give instant feedback, but Salt is the real enforcer
      */
     preCheck(intent: ActionIntent): PreCheckResult {
-        // Check market allowlist
-        if (intent.type === 'SPOT_BUY' || intent.type === 'SPOT_SELL') {
-            if (!this.config.guardrails.allowedMarkets.includes(intent.market)) {
-                return {
-                    valid: false,
-                    reason: `Market ${intent.market} not in allowlist. Allowed: ${this.config.guardrails.allowedMarkets.join(', ')}`
-                };
-            }
+        // TRANSFER intents are handled separately
+        if (intent.type === 'TRANSFER') {
+            return { valid: true }; // Salt handles transfer validation
+        }
 
-            if (intent.amount > this.config.guardrails.maxPerTx) {
-                return {
-                    valid: false,
-                    reason: `Amount $${intent.amount} exceeds max $${this.config.guardrails.maxPerTx} per transaction`
-                };
-            }
+        // Check market allowlist (using venue.allowedContracts as market allowlist)
+        const allowedMarkets = this.config.guardrails.venue.allowedContracts;
+        if (allowedMarkets.length > 0 && !allowedMarkets.includes(intent.market)) {
+            return {
+                valid: false,
+                reason: `Market ${intent.market} not in allowlist. Allowed: ${allowedMarkets.join(', ')}`
+            };
+        }
+
+        if (intent.notionalUsd > this.config.guardrails.spend.maxPerTrade) {
+            return {
+                valid: false,
+                reason: `Amount $${intent.notionalUsd} exceeds max $${this.config.guardrails.spend.maxPerTrade} per transaction`
+            };
         }
 
         // Check cooldown
         const elapsed = Date.now() - this.lastActionTime;
-        const cooldownMs = this.config.guardrails.cooldownSeconds * 1000;
+        const cooldownMs = this.config.guardrails.rate.cooldownSeconds * 1000;
 
         if (this.lastActionTime > 0 && elapsed < cooldownMs) {
             const remaining = Math.ceil((cooldownMs - elapsed) / 1000);
@@ -129,7 +135,6 @@ export class MonsoonAgent {
         try {
             const result = await this.salt.submitTx({
                 accountId: this.config.accountId,
-                chainId: ACTIVE_CHAIN.chainId,
                 ...txParams,
             });
 
@@ -184,9 +189,9 @@ export class MonsoonAgent {
     private intentToTxParams(intent: ActionIntent): { to: string; data: string; value?: string } {
         switch (intent.type) {
             case 'SPOT_BUY':
-                return this.buildSpotBuyTx(intent.market, intent.amount);
+                return this.buildSpotBuyTx(intent.market, intent.notionalUsd);
             case 'SPOT_SELL':
-                return this.buildSpotSellTx(intent.market, intent.amount);
+                return this.buildSpotSellTx(intent.market, intent.notionalUsd);
             case 'TRANSFER':
                 // For transfers, we'd use salt.transfer() instead
                 // But for demo, encode as a simple ETH transfer
@@ -195,6 +200,9 @@ export class MonsoonAgent {
                     data: '0x',
                     value: intent.amount.toString(),
                 };
+            case 'SPOT_MARKET_ORDER':
+            case 'SPOT_LIMIT_ORDER':
+                return this.buildSpotBuyTx(intent.market, intent.notionalUsd);
             default:
                 throw new Error('Unknown intent type');
         }

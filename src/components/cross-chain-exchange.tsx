@@ -336,7 +336,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
           abi: ERC20_ABI,
           functionName: "approve",
           args: [CORE_DEPOSIT_WALLET, amountBigInt],
-          chainId: hyperEVM.id,
         })
         await waitForTransactionReceipt(wagmiConfig, { hash: approveHash })
       }
@@ -349,7 +348,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         abi: CORE_DEPOSIT_WALLET_ABI,
         functionName: "deposit",
         args: [amountBigInt, destinationDexValue],
-        chainId: hyperEVM.id,
       })
 
       await waitForTransactionReceipt(wagmiConfig, { hash: depositHash })
@@ -549,420 +547,410 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             </button>
           )}
 
-      {/* Step 1: Select Chain */}
-      {step === "chain" && txStatus === "idle" && (
-        <>
-          <p className="text-gray-400 text-sm">Select your origin chain</p>
-          <div className="grid grid-cols-2 gap-3">
-            {SUPPORTED_CHAINS.map((chain) => (
-              <button
-                key={chain.id}
-                onClick={() => handleChainSelect(chain.id)}
-                className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] text-center hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
-              >
-                <div className="text-2xl mb-2 font-bold text-primary">{CHAIN_ICONS[chain.id]}</div>
-                <div className="font-semibold text-sm text-white">{chain.name}</div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Step 2: Select Asset */}
-      {step === "asset" && !isHyperEVMSelected && txStatus === "idle" && (
-        <>
-          <p className="text-gray-400 text-sm">Select asset from {selectedChainData?.name}</p>
-          <div className="space-y-2">
-            {availableAssets.map((asset) => (
-              <button
-                key={asset.symbol}
-                onClick={() => handleAssetSelect(asset.symbol)}
-                className="w-full p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] flex items-center gap-4 hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
-              >
-                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
-                  {asset.symbol.slice(0, 2)}
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold text-white">{asset.symbol}</div>
-                  <div className="text-sm text-gray-400">{asset.name}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Step 3: Enter Amount */}
-      {step === "amount" && txStatus === "idle" && (
-        <>
-          <p className="text-gray-400 text-sm">
-            {isHyperEVMSelected ? "Enter amount to deposit to your Hyperliquid account" : "Enter amount to exchange"}
-          </p>
-
-          {isHyperEVMSelected ? (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-400">Deposit Amount</span>
-                  <span className="text-sm text-gray-400">HyperEVM</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="number"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.0"
-                    className="flex-1 bg-transparent border-0 text-2xl font-bold p-0 h-auto focus-visible:ring-0 text-white placeholder:text-gray-600"
-                  />
-                  <div className="px-3 py-2 rounded-lg bg-primary/20 text-primary font-semibold">USDC</div>
-                </div>
+          {/* Step 1: Select Chain */}
+          {step === "chain" && txStatus === "idle" && (
+            <>
+              <p className="text-gray-400 text-sm">Select your origin chain</p>
+              <div className="grid grid-cols-2 gap-3">
+                {SUPPORTED_CHAINS.map((chain) => (
+                  <button
+                    key={chain.id}
+                    onClick={() => handleChainSelect(chain.id)}
+                    className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] text-center hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
+                  >
+                    <div className="text-2xl mb-2 font-bold text-primary">{CHAIN_ICONS[chain.id]}</div>
+                    <div className="font-semibold text-sm text-white">{chain.name}</div>
+                  </button>
+                ))}
               </div>
+            </>
+          )}
 
-              {/* Destination Selection */}
-              <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
-                <label className="block text-sm font-semibold mb-2 text-white">Deposit Destination</label>
-                <div className="text-xs text-gray-400 mb-3">Choose where to deposit your USDC in HyperCore</div>
-                <div className="grid grid-cols-2 gap-3">
+          {/* Step 2: Select Asset */}
+          {step === "asset" && !isHyperEVMSelected && txStatus === "idle" && (
+            <>
+              <p className="text-gray-400 text-sm">Select asset from {selectedChainData?.name}</p>
+              <div className="space-y-2">
+                {availableAssets.map((asset) => (
                   <button
-                    type="button"
-                    onClick={() => setDestinationDex("spot")}
-                    className={`p-4 rounded-xl border text-left transition-all duration-200 ${
-                      destinationDex === "spot"
-                        ? "border-primary bg-primary/15"
-                        : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
-                    }`}
+                    key={asset.symbol}
+                    onClick={() => handleAssetSelect(asset.symbol)}
+                    className="w-full p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] flex items-center gap-4 hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          destinationDex === "spot" ? "border-primary bg-primary" : "border-gray-600"
-                        }`}
-                      >
-                        {destinationDex === "spot" && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-sm text-white">Spot Account</div>
-                        <div className="text-xs text-gray-400 mt-1">For spot trading</div>
-                      </div>
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
+                      {asset.symbol.slice(0, 2)}
+                    </div>
+                    <div className="text-left">
+                      <div className="font-semibold text-white">{asset.symbol}</div>
+                      <div className="text-sm text-gray-400">{asset.name}</div>
                     </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setDestinationDex("perps")}
-                    className={`p-4 rounded-xl border text-left transition-all duration-200 ${
-                      destinationDex === "perps"
-                        ? "border-primary bg-primary/15"
-                        : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          destinationDex === "perps" ? "border-primary bg-primary" : "border-gray-600"
-                        }`}
-                      >
-                        {destinationDex === "perps" && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-sm text-white">Perps Account</div>
-                        <div className="text-xs text-gray-400 mt-1">For perpetuals</div>
-                      </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Step 3: Enter Amount */}
+          {step === "amount" && txStatus === "idle" && (
+            <>
+              <p className="text-gray-400 text-sm">
+                {isHyperEVMSelected ? "Enter amount to deposit to your Hyperliquid account" : "Enter amount to exchange"}
+              </p>
+
+              {isHyperEVMSelected ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-400">Deposit Amount</span>
+                      <span className="text-sm text-gray-400">HyperEVM</span>
                     </div>
-                  </button>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="0.0"
+                        className="flex-1 bg-transparent border-0 text-2xl font-bold p-0 h-auto focus-visible:ring-0 text-white placeholder:text-gray-600"
+                      />
+                      <div className="px-3 py-2 rounded-lg bg-primary/20 text-primary font-semibold">USDC</div>
+                    </div>
+                  </div>
+
+                  {/* Destination Selection */}
+                  <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
+                    <label className="block text-sm font-semibold mb-2 text-white">Deposit Destination</label>
+                    <div className="text-xs text-gray-400 mb-3">Choose where to deposit your USDC in HyperCore</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setDestinationDex("spot")}
+                        className={`p-4 rounded-xl border text-left transition-all duration-200 ${destinationDex === "spot"
+                            ? "border-primary bg-primary/15"
+                            : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
+                          }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${destinationDex === "spot" ? "border-primary bg-primary" : "border-gray-600"
+                              }`}
+                          >
+                            {destinationDex === "spot" && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-white">Spot Account</div>
+                            <div className="text-xs text-gray-400 mt-1">For spot trading</div>
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestinationDex("perps")}
+                        className={`p-4 rounded-xl border text-left transition-all duration-200 ${destinationDex === "perps"
+                            ? "border-primary bg-primary/15"
+                            : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
+                          }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${destinationDex === "perps" ? "border-primary bg-primary" : "border-gray-600"
+                              }`}
+                          >
+                            {destinationDex === "perps" && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-white">Perps Account</div>
+                            <div className="text-xs text-gray-400 mt-1">For perpetuals</div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleContinue}
+                    disabled={!amount || Number.parseFloat(amount) <= 0}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3"
+                  >
+                    Continue to Deposit
+                  </Button>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-400">From</span>
+                      <span className="text-sm text-gray-400">{selectedChainData?.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="0.0"
+                        className="flex-1 bg-transparent border-0 text-2xl font-bold p-0 h-auto focus-visible:ring-0 text-white placeholder:text-gray-600"
+                      />
+                      <div className="px-3 py-2 rounded-lg bg-[#1a1a2e] font-semibold text-white">{selectedAsset}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-[#12121a] border border-[#1a1a2e] flex items-center justify-center">
+                      <ArrowDown className="h-5 w-5 text-gray-400" />
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-400">To</span>
+                      <span className="text-sm text-gray-400">HyperEVM</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 text-2xl font-bold text-gray-500">{amount ? "~" + amount : "0.0"}</div>
+                      <div className="px-3 py-2 rounded-lg bg-primary/20 text-primary font-semibold">USDC</div>
+                    </div>
+                  </div>
+
+                  {/* Destination Selection for cross-chain */}
+                  <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
+                    <label className="block text-sm font-semibold mb-2 text-white">Final Destination (HyperCore)</label>
+                    <div className="text-xs text-gray-400 mb-3">
+                      Choose where to deposit your USDC after bridging
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setDestinationDex("spot")}
+                        className={`p-4 rounded-xl border text-left transition-all duration-200 ${destinationDex === "spot"
+                            ? "border-primary bg-primary/15"
+                            : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
+                          }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${destinationDex === "spot" ? "border-primary bg-primary" : "border-gray-600"
+                              }`}
+                          >
+                            {destinationDex === "spot" && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-white">Spot</div>
+                            <div className="text-xs text-gray-400 mt-1">Spot trading</div>
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestinationDex("perps")}
+                        className={`p-4 rounded-xl border text-left transition-all duration-200 ${destinationDex === "perps"
+                            ? "border-primary bg-primary/15"
+                            : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
+                          }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${destinationDex === "perps" ? "border-primary bg-primary" : "border-gray-600"
+                              }`}
+                          >
+                            {destinationDex === "perps" && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-white">Perps</div>
+                            <div className="text-xs text-gray-400 mt-1">Perpetuals</div>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleContinue}
+                    disabled={!amount || Number.parseFloat(amount) <= 0}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3"
+                  >
+                    Continue
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Step 4: Confirm */}
+          {step === "confirm" && txStatus === "idle" && (
+            <>
+              <p className="text-muted-foreground text-sm">
+                {isHyperEVMSelected ? "Review your deposit" : "Review your exchange"}
+              </p>
+
+              <div className="space-y-3">
+                {isHyperEVMSelected ? (
+                  <>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Deposit Amount</span>
+                      <span className="font-semibold">{amount} USDC</span>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Destination</span>
+                      <span className="font-semibold">{destinationDex === "spot" ? "Spot Account" : "Perps Account"}</span>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Network</span>
+                      <span className="font-semibold">HyperEVM → HyperCore</span>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Account</span>
+                      <span className="font-mono text-sm">
+                        {address?.slice(0, 8)}...{address?.slice(-6)}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">From</span>
+                      <span className="font-semibold">
+                        {amount} {selectedAsset} on {selectedChainData?.name}
+                      </span>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Bridge To</span>
+                      <span className="font-semibold text-primary">~{amount} USDC on HyperEVM</span>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Final Destination</span>
+                      <span className="font-semibold">
+                        HyperCore {destinationDex === "spot" ? "Spot" : "Perps"} Account
+                      </span>
+                    </div>
+                    <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
+                      <span className="text-muted-foreground">Recipient</span>
+                      <span className="font-mono text-sm">
+                        {address?.slice(0, 8)}...{address?.slice(-6)}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <Button
-                onClick={handleContinue}
-                disabled={!amount || Number.parseFloat(amount) <= 0}
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3"
+                onClick={isHyperEVMSelected ? () => handleDeposit() : handleExchange}
+                disabled={isLoading}
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                Continue to Deposit
+                {isHyperEVMSelected ? "Confirm Deposit" : "Confirm Exchange"}
               </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-400">From</span>
-                  <span className="text-sm text-gray-400">{selectedChainData?.name}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="number"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.0"
-                    className="flex-1 bg-transparent border-0 text-2xl font-bold p-0 h-auto focus-visible:ring-0 text-white placeholder:text-gray-600"
-                  />
-                  <div className="px-3 py-2 rounded-lg bg-[#1a1a2e] font-semibold text-white">{selectedAsset}</div>
-                </div>
+            </>
+          )}
+
+          {/* Transaction Status with Progress Tracker */}
+          {txStatus === "pending" && progressSteps.length > 0 && (
+            <div className="space-y-6 py-6">
+              <div className="text-center">
+                <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
+                <h4 className="text-lg font-bold mb-2">
+                  {isHyperEVMSelected ? "Processing Deposit" : "Processing Transaction"}
+                </h4>
               </div>
 
-              <div className="flex items-center justify-center">
-                <div className="w-10 h-10 rounded-full bg-[#12121a] border border-[#1a1a2e] flex items-center justify-center">
-                  <ArrowDown className="h-5 w-5 text-gray-400" />
-                </div>
-              </div>
+              <div className="space-y-4">
+                {progressSteps.map((stepDesc, index) => {
+                  const stepNumber = index + 1
+                  const isCompleted = stepNumber < progressStep
+                  const isCurrent = stepNumber === progressStep
+                  const isPending = stepNumber > progressStep
 
-              <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-400">To</span>
-                  <span className="text-sm text-gray-400">HyperEVM</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 text-2xl font-bold text-gray-500">{amount ? "~" + amount : "0.0"}</div>
-                  <div className="px-3 py-2 rounded-lg bg-primary/20 text-primary font-semibold">USDC</div>
-                </div>
-              </div>
-
-              {/* Destination Selection for cross-chain */}
-              <div className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a]">
-                <label className="block text-sm font-semibold mb-2 text-white">Final Destination (HyperCore)</label>
-                <div className="text-xs text-gray-400 mb-3">
-                  Choose where to deposit your USDC after bridging
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setDestinationDex("spot")}
-                    className={`p-4 rounded-xl border text-left transition-all duration-200 ${
-                      destinationDex === "spot"
-                        ? "border-primary bg-primary/15"
-                        : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          destinationDex === "spot" ? "border-primary bg-primary" : "border-gray-600"
-                        }`}
-                      >
-                        {destinationDex === "spot" && <div className="w-2 h-2 rounded-full bg-white" />}
+                  return (
+                    <div key={index} className="flex items-start gap-4">
+                      <div className="flex flex-col items-center">
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${isCompleted
+                              ? "bg-primary text-white"
+                              : isCurrent
+                                ? "bg-primary text-white animate-pulse"
+                                : "bg-border text-muted-foreground"
+                            }`}
+                        >
+                          {isCompleted ? "✓" : stepNumber}
+                        </div>
+                        {index < progressSteps.length - 1 && (
+                          <div className={`w-1 flex-1 min-h-[40px] my-2 ${isCompleted ? "bg-primary" : "bg-border"}`} />
+                        )}
                       </div>
-                      <div>
-                        <div className="font-semibold text-sm text-white">Spot</div>
-                        <div className="text-xs text-gray-400 mt-1">Spot trading</div>
+
+                      <div className="flex-1 pt-2">
+                        <div
+                          className={`font-semibold mb-1 ${isCurrent ? "text-primary" : isCompleted ? "text-primary" : "text-muted-foreground"
+                            }`}
+                        >
+                          {stepDesc}
+                        </div>
+                        {isCurrent && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            <span className="animate-pulse">●</span>
+                            In progress...
+                          </div>
+                        )}
+                        {isCompleted && <div className="text-xs text-primary">✓ Completed</div>}
                       </div>
                     </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDestinationDex("perps")}
-                    className={`p-4 rounded-xl border text-left transition-all duration-200 ${
-                      destinationDex === "perps"
-                        ? "border-primary bg-primary/15"
-                        : "border-[#1a1a2e] bg-[#0a0a0f] hover:border-primary/50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          destinationDex === "perps" ? "border-primary bg-primary" : "border-gray-600"
-                        }`}
-                      >
-                        {destinationDex === "perps" && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-sm text-white">Perps</div>
-                        <div className="text-xs text-gray-400 mt-1">Perpetuals</div>
-                      </div>
-                    </div>
-                  </button>
-                </div>
+                  )
+                })}
               </div>
-
-              <Button
-                onClick={handleContinue}
-                disabled={!amount || Number.parseFloat(amount) <= 0}
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3"
-              >
-                Continue
-              </Button>
             </div>
           )}
-        </>
-      )}
 
-      {/* Step 4: Confirm */}
-      {step === "confirm" && txStatus === "idle" && (
-        <>
-          <p className="text-muted-foreground text-sm">
-            {isHyperEVMSelected ? "Review your deposit" : "Review your exchange"}
-          </p>
-
-          <div className="space-y-3">
-            {isHyperEVMSelected ? (
-              <>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Deposit Amount</span>
-                  <span className="font-semibold">{amount} USDC</span>
-                </div>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Destination</span>
-                  <span className="font-semibold">{destinationDex === "spot" ? "Spot Account" : "Perps Account"}</span>
-                </div>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Network</span>
-                  <span className="font-semibold">HyperEVM → HyperCore</span>
-                </div>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Account</span>
-                  <span className="font-mono text-sm">
-                    {address?.slice(0, 8)}...{address?.slice(-6)}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">From</span>
-                  <span className="font-semibold">
-                    {amount} {selectedAsset} on {selectedChainData?.name}
-                  </span>
-                </div>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Bridge To</span>
-                  <span className="font-semibold text-primary">~{amount} USDC on HyperEVM</span>
-                </div>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Final Destination</span>
-                  <span className="font-semibold">
-                    HyperCore {destinationDex === "spot" ? "Spot" : "Perps"} Account
-                  </span>
-                </div>
-                <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
-                  <span className="text-muted-foreground">Recipient</span>
-                  <span className="font-mono text-sm">
-                    {address?.slice(0, 8)}...{address?.slice(-6)}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-
-          <Button
-            onClick={isHyperEVMSelected ? () => handleDeposit() : handleExchange}
-            disabled={isLoading}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            {isHyperEVMSelected ? "Confirm Deposit" : "Confirm Exchange"}
-          </Button>
-        </>
-      )}
-
-      {/* Transaction Status with Progress Tracker */}
-      {txStatus === "pending" && progressSteps.length > 0 && (
-        <div className="space-y-6 py-6">
-          <div className="text-center">
-            <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
-            <h4 className="text-lg font-bold mb-2">
-              {isHyperEVMSelected ? "Processing Deposit" : "Processing Transaction"}
-            </h4>
-          </div>
-
-          <div className="space-y-4">
-            {progressSteps.map((stepDesc, index) => {
-              const stepNumber = index + 1
-              const isCompleted = stepNumber < progressStep
-              const isCurrent = stepNumber === progressStep
-              const isPending = stepNumber > progressStep
-
-              return (
-                <div key={index} className="flex items-start gap-4">
-                  <div className="flex flex-col items-center">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                        isCompleted
-                          ? "bg-primary text-white"
-                          : isCurrent
-                            ? "bg-primary text-white animate-pulse"
-                            : "bg-border text-muted-foreground"
-                      }`}
-                    >
-                      {isCompleted ? "✓" : stepNumber}
+          {/* Success */}
+          {txStatus === "success" && (
+            <div className="text-center py-8">
+              <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
+              <h4 className="text-lg font-bold text-green-500 mb-2">
+                {isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)
+                  ? "Deposit Successful!"
+                  : "Bridge Successful!"}
+              </h4>
+              <p className="text-muted-foreground text-sm mb-4">
+                {isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)
+                  ? `${amount || bridgedAmount} USDC transferred from HyperEVM to HyperCore ${destinationDex === "spot" ? "Spot" : "Perps"} account`
+                  : `${bridgedAmount || amount} USDC is now on HyperEVM`}
+              </p>
+              {!isHyperEVMSelected && !(progressSteps.length === 3 && progressStep === 3) && showDepositAfterBridge && (
+                <div className="space-y-3">
+                  <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 mb-4">
+                    <div className="text-sm text-muted-foreground mb-2">
+                      Your USDC is on HyperEVM. Ready to deposit to HyperCore.
                     </div>
-                    {index < progressSteps.length - 1 && (
-                      <div className={`w-1 flex-1 min-h-[40px] my-2 ${isCompleted ? "bg-primary" : "bg-border"}`} />
-                    )}
+                    <div className="text-xs text-muted-foreground">
+                      Destination: <strong>{destinationDex === "spot" ? "Spot" : "Perps"} Account</strong>
+                    </div>
                   </div>
+                  <Button onClick={handleDepositAfterBridge} className="w-full bg-primary hover:bg-primary/90">
+                    Deposit to HyperCore {destinationDex === "spot" ? "Spot" : "Perps"}
+                  </Button>
+                  <Button onClick={resetForm} variant="outline" className="w-full border-border/60 bg-transparent">
+                    Done
+                  </Button>
+                </div>
+              )}
+              {(isHyperEVMSelected || !showDepositAfterBridge) && (
+                <Button onClick={resetForm} variant="outline" className="border-border/60 bg-transparent">
+                  {isHyperEVMSelected ? "New Deposit" : "New Exchange"}
+                </Button>
+              )}
+            </div>
+          )}
 
-                  <div className="flex-1 pt-2">
-                    <div
-                      className={`font-semibold mb-1 ${
-                        isCurrent ? "text-primary" : isCompleted ? "text-primary" : "text-muted-foreground"
-                      }`}
-                    >
-                      {stepDesc}
-                    </div>
-                    {isCurrent && (
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span className="animate-pulse">●</span>
-                        In progress...
-                      </div>
-                    )}
-                    {isCompleted && <div className="text-xs text-primary">✓ Completed</div>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Success */}
-      {txStatus === "success" && (
-        <div className="text-center py-8">
-          <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
-          <h4 className="text-lg font-bold text-green-500 mb-2">
-            {isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)
-              ? "Deposit Successful!"
-              : "Bridge Successful!"}
-          </h4>
-          <p className="text-muted-foreground text-sm mb-4">
-            {isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)
-              ? `${amount || bridgedAmount} USDC transferred from HyperEVM to HyperCore ${destinationDex === "spot" ? "Spot" : "Perps"} account`
-              : `${bridgedAmount || amount} USDC is now on HyperEVM`}
-          </p>
-          {!isHyperEVMSelected && !(progressSteps.length === 3 && progressStep === 3) && showDepositAfterBridge && (
-            <div className="space-y-3">
-              <div className="p-4 rounded-lg bg-primary/10 border border-primary/30 mb-4">
-                <div className="text-sm text-muted-foreground mb-2">
-                  Your USDC is on HyperEVM. Ready to deposit to HyperCore.
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Destination: <strong>{destinationDex === "spot" ? "Spot" : "Perps"} Account</strong>
-                </div>
-              </div>
-              <Button onClick={handleDepositAfterBridge} className="w-full bg-primary hover:bg-primary/90">
-                Deposit to HyperCore {destinationDex === "spot" ? "Spot" : "Perps"}
-              </Button>
-              <Button onClick={resetForm} variant="outline" className="w-full border-border/60 bg-transparent">
-                Done
+          {/* Error */}
+          {txStatus === "error" && (
+            <div className="text-center py-8">
+              <XCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+              <h4 className="text-lg font-bold text-destructive mb-2">
+                {isHyperEVMSelected ? "Deposit Failed" : "Exchange Failed"}
+              </h4>
+              <p className="text-muted-foreground text-sm mb-4 max-w-[300px] mx-auto">{errorMessage}</p>
+              <Button onClick={resetForm} variant="outline" className="border-border/60 bg-transparent">
+                Try Again
               </Button>
             </div>
           )}
-          {(isHyperEVMSelected || !showDepositAfterBridge) && (
-            <Button onClick={resetForm} variant="outline" className="border-border/60 bg-transparent">
-              {isHyperEVMSelected ? "New Deposit" : "New Exchange"}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Error */}
-      {txStatus === "error" && (
-        <div className="text-center py-8">
-          <XCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-          <h4 className="text-lg font-bold text-destructive mb-2">
-            {isHyperEVMSelected ? "Deposit Failed" : "Exchange Failed"}
-          </h4>
-          <p className="text-muted-foreground text-sm mb-4 max-w-[300px] mx-auto">{errorMessage}</p>
-          <Button onClick={resetForm} variant="outline" className="border-border/60 bg-transparent">
-            Try Again
-          </Button>
-        </div>
-      )}
         </div>
       </div>
     </div>

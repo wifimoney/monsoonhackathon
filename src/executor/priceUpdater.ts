@@ -49,7 +49,7 @@ async function main() {
             const hash = await walletClient.writeContract({
                 address: HYPEREVM.HYPERCORE_QUOTER as `0x${string}`,
                 abi: HYPERCORE_QUOTER_ABI,
-                functionName: 'updatePrice',
+                functionName: 'updateFallbackPrice',
                 args: [priceWei],
             });
 
