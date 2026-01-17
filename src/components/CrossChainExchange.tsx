@@ -2,23 +2,18 @@
 
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
-import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract } from '@wagmi/core';
+import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract, getChainId, getPublicClient } from '@wagmi/core';
 import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
 import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche } from 'viem/chains';
+import { allChains } from '@/lib/wagmi';
 import { wagmiConfig } from '@/lib/wagmi';
 import { parseUnits } from 'viem';
 
-// HyperEVM chain definition
-const hyperEvm = {
-    id: 999,
-    name: 'HyperEVM',
-    nativeCurrency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
-    rpcUrls: {
-        default: { http: ['https://rpc.hyperliquid.xyz/evm'] },
-    },
-} as const;
-
-// Use viem chain definitions
+// Use viem chain definitions - get hyperEvm from wagmi config
+const hyperEvm = allChains.find(c => c.id === 999);
+if (!hyperEvm) {
+    throw new Error('HyperEVM chain not found in wagmi config');
+}
 const SUPPORTED_CHAINS = [mainnet, arbitrum, optimism, polygon, base, bsc, avalanche, hyperEvm];
 
 const CHAIN_ICONS: Record<number, string> = {
@@ -296,18 +291,97 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             }
 
             // Check if user is on HyperEVM network
-            const currentChainId = chain?.id;
+            // Always check the actual wallet client, not just wagmi's state (which can be stale)
+            const walletClientForCheck = await getWalletClient(wagmiConfig);
+            let currentChainId = walletClientForCheck ? await walletClientForCheck.getChainId() : chain?.id;
+            
+            console.log(`[Deposit] Current chain check - Wagmi state: ${chain?.id}, Wallet client: ${currentChainId}`);
+            
             if (currentChainId !== HYPEREVM.chainId) {
                 console.log(`[Deposit] Switching to HyperEVM network...`);
-                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
+                console.log(`[Deposit] Current chain: ${currentChainId}, Target: ${HYPEREVM.chainId}`);
+                try {
+                    // Switch chain using wagmi core function - this will prompt the user
+                    await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
+                    console.log(`[Deposit] Chain switch requested. Waiting for user approval...`);
+                    
+                    // Wait for the chain switch to complete by polling the wallet client's chain ID
+                    // This is more reliable than getChainId which might use cached state
+                    let attempts = 0;
+                    const maxAttempts = 60; // 30 seconds max wait (user needs time to approve)
+                    let switched = false;
+                    
+                    while (attempts < maxAttempts && !switched) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        try {
+                            // Get wallet client and check its chain ID directly
+                            const walletClient = await getWalletClient(wagmiConfig);
+                            if (walletClient) {
+                                const walletChainId = await walletClient.getChainId();
+                                console.log(`[Deposit] Polling chain switch... Attempt ${attempts + 1}/${maxAttempts}, Current chain: ${walletChainId}`);
+                                if (walletChainId === HYPEREVM.chainId) {
+                                    console.log(`[Deposit] Successfully switched to HyperEVM (chain ID: ${walletChainId})`);
+                                    switched = true;
+                                    break;
+                                }
+                            }
+                        } catch (e) {
+                            // Wallet client might not be available yet, continue waiting
+                            console.log(`[Deposit] Waiting for chain switch... (${attempts + 1}/${maxAttempts})`);
+                        }
+                        attempts++;
+                    }
+                    
+                    // Final verification - check wallet client directly
+                    if (!switched) {
+                        const finalWalletClient = await getWalletClient(wagmiConfig);
+                        const finalChainId = finalWalletClient ? await finalWalletClient.getChainId() : await getChainId(wagmiConfig);
+                        console.error(`[Deposit] Chain switch failed. Final chain ID: ${finalChainId}, Expected: ${HYPEREVM.chainId}`);
+                        throw new Error(`Chain switch incomplete. Current chain: ${finalChainId}, Expected: ${HYPEREVM.chainId}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) in your wallet and try again.`);
+                    }
+                    
+                    // Small delay to ensure state propagation
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // One more verification after delay
+                    const verifyWalletClient = await getWalletClient(wagmiConfig);
+                    if (verifyWalletClient) {
+                        const verifyChainId = await verifyWalletClient.getChainId();
+                        if (verifyChainId !== HYPEREVM.chainId) {
+                            throw new Error(`Chain switch verification failed. Current chain: ${verifyChainId}, Expected: ${HYPEREVM.chainId}. Please ensure you're on HyperEVM in your wallet.`);
+                        }
+                        console.log(`[Deposit] Chain switch verified: ${verifyChainId}`);
+                    }
+                } catch (error: any) {
+                    console.error(`[Deposit] Failed to switch chain:`, error);
+                    if (error.message?.includes('User rejected') || error.message?.includes('rejected')) {
+                        throw new Error('Chain switch was rejected. Please switch to HyperEVM (Chain ID: 999) manually in your wallet and try again.');
+                    }
+                    throw new Error(`Failed to switch to HyperEVM network: ${error.message || 'Unknown error'}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) manually in your wallet.`);
+                }
+            } else {
+                console.log(`[Deposit] Already on HyperEVM (chain ID: ${currentChainId})`);
             }
 
             // Convert amount to token units
             const tokenAmount = parseTokenAmount(depositAmount, assetData.decimals);
             const amountBigInt = BigInt(tokenAmount);
+            
+            // Note: The contract will enforce minimum deposit amount for new accounts (1 USDC)
+            // Existing accounts can deposit any amount. We let the contract handle validation
+            // to avoid blocking existing accounts from making smaller deposits.
+            
+            // Warn user if depositing less than 1 USDC (might fail for new accounts)
+            const depositAmountNum = parseFloat(depositAmount);
+            if (depositAmountNum > 0 && depositAmountNum < 1) {
+                console.warn(`[Deposit] Warning: Depositing ${depositAmount} USDC which is less than 1 USDC. This will fail if you don't have a HyperCore account yet.`);
+            }
 
             console.log(`[Deposit] Preparing USDC deposit to Hyperliquid...`);
             console.log(`[Deposit] Amount: ${depositAmount} USDC = ${tokenAmount} (${assetData.decimals} decimals)`);
+            console.log(`[Deposit] Amount in BigInt: ${amountBigInt.toString()}`);
+            console.log(`[Deposit] Minimum required (1 USDC): 1000000`);
+            console.log(`[Deposit] Amount check: ${amountBigInt >= BigInt('1000000') ? 'PASS' : 'FAIL'} (${amountBigInt.toString()} >= 1000000)`);
 
             // Step 1: Approve USDC spending to CoreDepositWallet contract
             const usdcAddress = assetData.address as `0x${string}`;
@@ -322,8 +396,83 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 setProgressStep(1);
             }
 
+            // Verify we're on HyperEVM by checking wallet client directly
+            // This check happens after the chain switch above, so we should be on HyperEVM
+            const walletClient = await getWalletClient(wagmiConfig);
+            if (!walletClient) {
+                throw new Error('Wallet client not available');
+            }
+            
+            // Double-check the chain ID from the wallet client (most reliable source)
+            const actualChainId = await walletClient.getChainId();
+            console.log(`[Deposit] Wallet client chain ID: ${actualChainId}, Expected: ${HYPEREVM.chainId}`);
+            
+            if (actualChainId !== HYPEREVM.chainId) {
+                // If we're still not on HyperEVM, try switching again
+                console.log(`[Deposit] Still not on HyperEVM, attempting chain switch again...`);
+                try {
+                    await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
+                    // Wait and verify the switch
+                    let attempts = 0;
+                    const maxAttempts = 30; // 15 seconds
+                    while (attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        const newChainId = await walletClient.getChainId();
+                        if (newChainId === HYPEREVM.chainId) {
+                            console.log(`[Deposit] Successfully switched to HyperEVM after retry`);
+                            break;
+                        }
+                        attempts++;
+                    }
+                    
+                    // Final check
+                    const finalChainId = await walletClient.getChainId();
+                    if (finalChainId !== HYPEREVM.chainId) {
+                        throw new Error(`Failed to switch to HyperEVM. Current chain: ${finalChainId}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) manually in your wallet and try again.`);
+                    }
+                } catch (switchError: any) {
+                    throw new Error(`Must be on HyperEVM to deposit. Current chain: ${actualChainId}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) in your wallet and try again. Error: ${switchError.message || 'Unknown error'}`);
+                }
+            }
+            
+            console.log(`[Deposit] Verified on HyperEVM (chain ID: ${actualChainId})`);
+            console.log(`[Deposit] Wallet Address: ${address}`);
+            console.log(`[Deposit] USDC Contract: ${usdcAddress}`);
+            console.log(`[Deposit] CoreDepositWallet: ${coreDepositWallet}`);
+            
             // Check current allowance
             console.log(`[Deposit] Checking USDC allowance for CoreDepositWallet...`);
+            
+            // Check USDC balance first
+            try {
+                const balance = await readContract(wagmiConfig, {
+                    address: usdcAddress,
+                    abi: [
+                        {
+                            name: 'balanceOf',
+                            type: 'function',
+                            stateMutability: 'view',
+                            inputs: [{ name: 'account', type: 'address' }],
+                            outputs: [{ name: '', type: 'uint256' }],
+                        },
+                    ] as const,
+                    functionName: 'balanceOf',
+                    args: [address as `0x${string}`],
+                    chainId: HYPEREVM.chainId,
+                });
+                const balanceFormatted = formatTokenAmount(balance.toString(), assetData.decimals);
+                console.log(`[Deposit] USDC Balance: ${balanceFormatted} USDC`);
+                
+                if (BigInt(balance.toString()) < amountBigInt) {
+                    throw new Error(`Insufficient USDC balance. You have ${balanceFormatted} USDC but need ${depositAmount} USDC.`);
+                }
+            } catch (error: any) {
+                if (error.message?.includes('Insufficient USDC balance')) {
+                    throw error;
+                }
+                console.warn(`[Deposit] Could not check balance:`, error);
+            }
+            
             const currentAllowance = await readContract(wagmiConfig, {
                 address: usdcAddress,
                 abi: ERC20_ABI,
@@ -359,6 +508,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             console.log(`[Deposit] Depositing ${depositAmount} USDC to HyperCore (${destinationDex === 'spot' ? 'Spot' : 'Perps'} account)...`);
             console.log(`[Deposit] Destination: ${destinationDex} (destinationDex = ${destinationDexValue})`);
             console.log(`[Deposit] Note: First-time deposits may incur a 1 USDC account creation fee`);
+            console.log(`[Deposit] Final amount being sent to contract: ${amountBigInt.toString()} (${depositAmount} USDC)`);
             
             const depositHash = await writeContract(wagmiConfig, {
                 address: coreDepositWallet,
@@ -399,6 +549,34 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             setTxStatus('success');
         } catch (error: any) {
             const errorMsg = error?.message || error?.toString() || '';
+            
+            // Check for minimum deposit amount error
+            if (errorMsg.includes('Amount must exceed new account fee') || 
+                errorMsg.includes('amount must be at least')) {
+                // Log detailed information for debugging
+                const depositAmountNum = parseFloat(depositAmount || '0');
+                const expectedTokenAmount = depositAmountNum * 1000000; // USDC has 6 decimals
+                
+                console.error('[Deposit] Amount validation error details:', {
+                    depositAmount,
+                    depositAmountNum,
+                    expectedTokenAmount,
+                    minimumRequired: '1000000',
+                    isAboveMinimum: depositAmountNum >= 1,
+                    errorMessage: errorMsg,
+                });
+                
+                // Provide more helpful error message
+                if (depositAmountNum >= 1) {
+                    setErrorMessage(`The deposit failed even though you deposited ${depositAmount} USDC (which is above the 1 USDC minimum). This might be a contract issue. Please check: 1) You have sufficient USDC balance on HyperEVM, 2) The amount was correctly converted (should be ${expectedTokenAmount} in smallest units), 3) Try again or contact support if the issue persists.`);
+                } else {
+                    setErrorMessage(`For new accounts, the deposit amount must be at least 1 USDC to cover the account creation fee. You attempted to deposit ${depositAmount} USDC. Please increase your deposit amount to at least 1 USDC.`);
+                }
+                setTxStatus('error');
+                setIsLoading(false);
+                return;
+            }
+            
             const isUserRejection =
                 errorMsg.toLowerCase().includes('user rejected') ||
                 errorMsg.toLowerCase().includes('user denied') ||
@@ -419,12 +597,28 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             // Only show error for actual failures
             console.error('\n========== DEPOSIT FAILED ==========');
             console.error('[Deposit] Error:', error);
+            console.error('[Deposit] Error Details:', {
+                message: errorMsg,
+                code: error?.code,
+                data: error?.data,
+                address: address,
+                chainId: chain?.id,
+            });
             console.error('======================================\n');
 
+            // Provide more specific error messages
             if (errorMsg.includes('Chain not configured')) {
                 setErrorMessage('Please switch to HyperEVM network in your wallet.');
+            } else if (errorMsg.includes('Insufficient')) {
+                setErrorMessage(errorMsg);
+            } else if (errorMsg.includes('user rejected') || errorMsg.includes('User rejected')) {
+                // Already handled above, but just in case
+                setTxStatus('idle');
+                setErrorMessage('');
+                return;
             } else {
-                setErrorMessage(errorMsg || 'Something went wrong. Please try again.');
+                // Include address in error message for debugging
+                setErrorMessage(`${errorMsg || 'Something went wrong. Please try again.'} (Address: ${address?.slice(0, 6)}...${address?.slice(-4)})`);
             }
 
             setTxStatus('error');
@@ -460,7 +654,55 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Convert amount to token units with correct decimals
             const tokenAmount = parseTokenAmount(amount, selectedAssetData.decimals);
+            const amountBigInt = BigInt(tokenAmount);
             console.log(`[LiFi] Token amount: ${amount} ${selectedAsset} = ${tokenAmount} (${selectedAssetData.decimals} decimals)`);
+
+            // Check balance on source chain before attempting bridge
+            console.log('[Exchange] Checking balance on source chain...');
+            try {
+                // Check if it's native token (ETH) or ERC20
+                if (selectedAssetData.address === '0x0000000000000000000000000000000000000000') {
+                    // Native token - check ETH balance using public client
+                    const publicClient = getPublicClient(wagmiConfig, { chainId: selectedChain });
+                    if (!publicClient) {
+                        throw new Error('Public client not available for source chain');
+                    }
+                    const balance = await publicClient.getBalance({ address: address as `0x${string}` });
+                    console.log(`[Exchange] Native token balance: ${balance.toString()} (${formatTokenAmount(balance.toString(), 18)} ${selectedAsset})`);
+                    if (balance < amountBigInt) {
+                        throw new Error(`Insufficient ${selectedAsset} balance. You have ${formatTokenAmount(balance.toString(), 18)} ${selectedAsset} but need ${amount} ${selectedAsset}.`);
+                    }
+                } else {
+                    // ERC20 token - check token balance
+                    const balance = await readContract(wagmiConfig, {
+                        address: selectedAssetData.address as `0x${string}`,
+                        abi: [
+                            {
+                                name: 'balanceOf',
+                                type: 'function',
+                                stateMutability: 'view',
+                                inputs: [{ name: 'account', type: 'address' }],
+                                outputs: [{ name: '', type: 'uint256' }],
+                            },
+                        ] as const,
+                        functionName: 'balanceOf',
+                        args: [address as `0x${string}`],
+                        chainId: selectedChain,
+                    });
+                    const balanceFormatted = formatTokenAmount(balance.toString(), selectedAssetData.decimals);
+                    console.log(`[Exchange] Token balance: ${balance.toString()} (${balanceFormatted} ${selectedAsset})`);
+                    if (BigInt(balance.toString()) < amountBigInt) {
+                        throw new Error(`Insufficient ${selectedAsset} balance. You have ${balanceFormatted} ${selectedAsset} but need ${amount} ${selectedAsset}.`);
+                    }
+                }
+                console.log(`[Exchange] Balance check passed: ${amount} ${selectedAsset} available`);
+            } catch (balanceError: any) {
+                if (balanceError.message?.includes('Insufficient')) {
+                    throw balanceError;
+                }
+                console.warn(`[Exchange] Could not check balance:`, balanceError);
+                // Continue anyway - LiFi will check balance too
+            }
 
             // Get routes from LiFi with slippage tolerance
             console.log('[LiFi] Fetching routes...');
@@ -474,9 +716,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 options: {
                     slippage: 0.03, // 3% slippage tolerance
                     order: 'RECOMMENDED',
-                    allowBridges: ['stargate', 'hop', 'across', 'anyswap', 'multichain'],
-                    // Disable bundling to avoid bundle ID errors
-                    allowSwitchChain: true,
                 },
             });
 
@@ -543,11 +782,29 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             });
 
             if (!executedRoute) {
-                throw new Error('Exchange failed');
+                throw new Error('Exchange failed - no route executed');
             }
 
-            // Get the actual received amount from the executed route
+            // Verify that the bridge was actually successful
+            // Check if all steps completed successfully
+            const allStepsCompleted = executedRoute.steps?.every(
+                step => step.execution?.status === 'DONE'
+            );
+            
+            if (!allStepsCompleted) {
+                const failedSteps = executedRoute.steps?.filter(
+                    step => step.execution?.status !== 'DONE'
+                );
+                console.error('[Exchange] Bridge incomplete. Failed steps:', failedSteps);
+                throw new Error('Bridge transaction did not complete successfully. Please try again.');
+            }
+
+            // Verify we received tokens on HyperEVM
             const receivedAmount = executedRoute.toAmount || route.toAmount;
+            if (!receivedAmount || BigInt(receivedAmount) === BigInt(0)) {
+                throw new Error('Bridge completed but no tokens were received on HyperEVM');
+            }
+
             const receivedAmountFormatted = receivedAmount 
                 ? formatTokenAmount(receivedAmount, route.toToken?.decimals || 6)
                 : amount;
@@ -557,10 +814,18 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             console.log('\n========== EXCHANGE SUCCESSFUL ==========');
             console.log(`[Exchange] ${amount} ${selectedAsset} -> ${receivedAmountFormatted} USDC on HyperEVM`);
+            console.log(`[Exchange] Bridge verified: All steps completed successfully`);
             console.log('==========================================\n');
 
             // Store bridged amount
             setBridgedAmount(receivedAmountFormatted);
+
+            // Only trigger deposit if bridge was successful
+            // Verify the bridge completed successfully before depositing
+            console.log('\n========== VERIFYING BRIDGE SUCCESS ==========');
+            console.log(`[Verification] Bridge completed: ${receivedAmountFormatted} USDC received on HyperEVM`);
+            console.log(`[Verification] All bridge steps completed successfully`);
+            console.log('===============================================\n');
 
             // Automatically trigger deposit to HyperCore after successful bridge
             // Ensure progress steps are set up for the 3-step process
@@ -575,13 +840,28 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             // Pass the bridged amount and HyperEVM config directly to handleDeposit
             console.log('\n========== AUTO-DEPOSIT AFTER BRIDGE ==========');
             console.log(`[Auto-Deposit] Starting automatic deposit of ${receivedAmountFormatted} USDC to HyperCore`);
+            console.log(`[Auto-Deposit] Bridge verified successful - proceeding with deposit`);
             console.log('================================================\n');
             
             // Call handleDeposit with the bridged amount, overriding state values
+            // This will only execute if the bridge was successful (verified above)
             await handleDeposit(receivedAmountFormatted, HYPEREVM.chainId, 'USDC');
         } catch (error: any) {
             // Check if user rejected the transaction
             const errorMsg = error?.message || error?.toString() || '';
+            
+            // Check for balance errors
+            if (errorMsg.includes('BalanceError') || 
+                errorMsg.includes('balance is too low') ||
+                errorMsg.includes('Insufficient') ||
+                error?.name === 'BalanceError') {
+                console.error('[Exchange] Balance error:', error);
+                setErrorMessage(`Insufficient balance. ${errorMsg.includes('Insufficient') ? errorMsg : `You don't have enough ${selectedAsset} on ${selectedChainData?.name} to complete this bridge. Please check your balance and try again.`}`);
+                setTxStatus('error');
+                setIsLoading(false);
+                return;
+            }
+            
             const isUserRejection =
                 errorMsg.toLowerCase().includes('user rejected') ||
                 errorMsg.toLowerCase().includes('user denied') ||
