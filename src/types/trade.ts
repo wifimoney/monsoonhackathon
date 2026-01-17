@@ -41,6 +41,8 @@ export interface TradeProposal {
  * Used for maintaining conversation context with GPT-4.
  */
 export interface ChatMessage {
+  /** Unique identifier for the message */
+  id: string;
   /** Role of the message sender */
   role: 'user' | 'assistant';
   /** Text content of the message */

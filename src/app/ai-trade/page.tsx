@@ -24,10 +24,7 @@ export default function AITradePage() {
         {/* Starter prompts or message history */}
         {messages.length === 0 ? (
           <div className="ai-trade-welcome">
-            <StarterPrompts
-              onSelectPrompt={handleSelectPrompt}
-              hasMessages={messages.length > 0}
-            />
+            <StarterPrompts onSelectPrompt={handleSelectPrompt} />
           </div>
         ) : (
           <MessageHistory messages={messages} onModify={handleModify} />

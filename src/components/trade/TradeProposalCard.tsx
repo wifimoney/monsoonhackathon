@@ -21,7 +21,14 @@ function PositionList({ positions, side }: { positions: Position[]; side: 'long'
         >
           <div className="flex flex-col">
             <span className="font-mono font-semibold">{position.symbol}</span>
-            <span className="text-xs text-[var(--muted)]">{position.name}</span>
+            <a
+              href={`https://app.hyperliquid.xyz/trade/${position.symbol}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-[var(--primary)] hover:underline"
+            >
+              Trade on Hyperliquid →
+            </a>
           </div>
           <div className="text-right">
             <span className="font-mono font-bold">{position.weight}%</span>
@@ -38,12 +45,10 @@ export function TradeProposalCard({ proposal, onModify }: TradeProposalCardProps
     console.log('Proposal ID:', proposal.id);
     console.log('Long positions:', proposal.longPositions);
     console.log('Short positions:', proposal.shortPositions);
-    console.log('Stop-Loss:', proposal.stopLoss + '%');
-    console.log('Take-Profit:', proposal.takeProfit + '%');
   };
 
   const handleModify = () => {
-    const refinementMessage = `I'd like to modify this proposal. Current settings: Long ${proposal.longPositions.map(p => p.symbol).join(', ')}, Short ${proposal.shortPositions.map(p => p.symbol).join(', ')}, SL ${proposal.stopLoss}%, TP ${proposal.takeProfit}%. Please adjust...`;
+    const refinementMessage = `I'd like to modify this proposal. Current: Long ${proposal.longPositions.map(p => p.symbol).join(', ') || 'none'}, Short ${proposal.shortPositions.map(p => p.symbol).join(', ') || 'none'}. Please adjust...`;
     onModify(refinementMessage);
   };
 
@@ -83,22 +88,6 @@ export function TradeProposalCard({ proposal, onModify }: TradeProposalCardProps
             </span>
           </div>
           <PositionList positions={proposal.shortPositions} side="short" />
-        </div>
-      </div>
-
-      {/* Guardrails section */}
-      <div className="flex items-center justify-center gap-6 py-3 border-t border-[var(--card-border)]">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-[var(--muted)]">Stop-Loss:</span>
-          <span className="font-mono font-semibold" style={{ color: 'var(--danger)' }}>
-            -{proposal.stopLoss}%
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-[var(--muted)]">Take-Profit:</span>
-          <span className="font-mono font-semibold" style={{ color: 'var(--accent)' }}>
-            +{proposal.takeProfit}%
-          </span>
         </div>
       </div>
 

@@ -29,9 +29,9 @@ export function MessageHistory({ messages, onModify }: MessageHistoryProps) {
       className="flex-1 overflow-y-auto px-4 py-6 space-y-4"
       style={{ maxHeight: 'calc(100vh - 200px)' }}
     >
-      {messages.map((message, index) => (
+      {messages.map((message) => (
         <MessageBubble
-          key={index}
+          key={message.id}
           message={message}
           onModify={onModify}
         />

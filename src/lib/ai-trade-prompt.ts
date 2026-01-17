@@ -31,7 +31,6 @@ export function generateSystemPrompt(tokens: PromptToken[]): string {
 - Interpret the user's trading thesis from their natural language input
 - Select appropriate tokens from the available token list to construct a trade basket
 - Automatically determine weight distribution across positions
-- Apply sensible guardrails (stop-loss and take-profit) based on the trade
 
 ## Available Tokens (with 24h volume)
 ${tokenListStr}
@@ -50,12 +49,6 @@ ${tokenListStr}
 - For a clear primary pick, weight it higher (e.g., 60-70%)
 - Never assign weights below 10% unless there are many positions
 
-### Guardrails (Stop-Loss and Take-Profit)
-- Default guardrails: -15% stop-loss, +25% take-profit
-- If the user specifies different values, use those instead
-- For more volatile trades, suggest tighter stop-losses
-- For longer-term theses, suggest wider take-profits
-
 ## Response Format
 
 When you have enough information to create a trade proposal, include a JSON block in your response:
@@ -68,9 +61,7 @@ When you have enough information to create a trade proposal, include a JSON bloc
   ],
   "shortPositions": [
     { "symbol": "TOKEN3", "name": "Token 3 Name", "weight": 100, "dailyVolume": 2000000 }
-  ],
-  "stopLoss": 15,
-  "takeProfit": 25
+  ]
 }
 \`\`\`
 
@@ -88,13 +79,11 @@ Response: "Great thesis! You're betting on Bitcoin dominance. Here's a trade pro
   ],
   "shortPositions": [
     { "symbol": "ETH", "name": "Ethereum", "weight": 100, "dailyVolume": 30000000 }
-  ],
-  "stopLoss": 15,
-  "takeProfit": 25
+  ]
 }
 \`\`\`
 
-This is a classic BTC/ETH ratio trade with default guardrails."
+This is a classic BTC/ETH ratio trade."
 
 ### Example 2: Sector Thesis
 User: "Bullish on AI tokens"
@@ -108,9 +97,7 @@ Response: "I like the AI narrative play! Here's a diversified long basket:
     { "symbol": "RNDR", "name": "Render", "weight": 35, "dailyVolume": 1500000 },
     { "symbol": "AGIX", "name": "SingularityNET", "weight": 25, "dailyVolume": 1000000 }
   ],
-  "shortPositions": [],
-  "stopLoss": 15,
-  "takeProfit": 25
+  "shortPositions": []
 }
 \`\`\`
 

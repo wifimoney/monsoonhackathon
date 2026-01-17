@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { ChatMessage, TradeProposal } from '@/types/trade';
 
 interface ChatAPIResponse {
@@ -26,17 +26,25 @@ interface ChatAPIResponse {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // Ref to track current messages and avoid stale closure issues
+  const messagesRef = useRef<ChatMessage[]>([]);
 
   const sendMessage = useCallback(async (userInput: string) => {
     if (!userInput.trim() || isLoading) return;
 
-    // Add user message to history
+    // Add user message to history with unique ID
     const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
       role: 'user',
       content: userInput,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    // Update both state and ref
+    setMessages((prev) => {
+      const updated = [...prev, userMessage];
+      messagesRef.current = updated;
+      return updated;
+    });
     setIsLoading(true);
 
     try {
@@ -46,7 +54,8 @@ export function useChat() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
+          // Use ref to get current messages (avoids stale closure)
+          messages: messagesRef.current,
           userInput,
         }),
       });
@@ -57,8 +66,9 @@ export function useChat() {
 
       const data: ChatAPIResponse = await response.json();
 
-      // Create assistant message
+      // Create assistant message with unique ID
       const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
         role: 'assistant',
         content: data.content,
       };
@@ -76,22 +86,32 @@ export function useChat() {
         assistantMessage.tradeProposal = proposal;
       }
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => {
+        const updated = [...prev, assistantMessage];
+        messagesRef.current = updated;
+        return updated;
+      });
     } catch (error) {
-      // Add error message from assistant
+      // Add error message from assistant with unique ID
       const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
         role: 'assistant',
         content: 'Sorry, I encountered an error processing your request. Please try again.',
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => {
+        const updated = [...prev, errorMessage];
+        messagesRef.current = updated;
+        return updated;
+      });
       console.error('Chat API error:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [messages, isLoading]);
+  }, [isLoading]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
+    messagesRef.current = [];
   }, []);
 
   return {

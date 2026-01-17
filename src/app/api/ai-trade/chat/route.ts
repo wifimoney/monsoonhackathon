@@ -110,8 +110,8 @@ function extractTradeProposal(content: string): Omit<TradeProposal, 'id' | 'crea
     return {
       longPositions: parsed.longPositions || [],
       shortPositions: parsed.shortPositions || [],
-      stopLoss: parsed.stopLoss ?? 15,
-      takeProfit: parsed.takeProfit ?? 25,
+      stopLoss: 0,
+      takeProfit: 0,
     };
   } catch {
     return null;
@@ -145,6 +145,30 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate messages array
+    if (!Array.isArray(messages)) {
+      return NextResponse.json(
+        { success: false, error: 'messages must be an array' },
+        { status: 400 }
+      );
+    }
+
+    // Validate each message has required fields
+    for (const msg of messages) {
+      if (!msg || typeof msg.role !== 'string' || typeof msg.content !== 'string') {
+        return NextResponse.json(
+          { success: false, error: 'Each message must have role and content strings' },
+          { status: 400 }
+        );
+      }
+      if (msg.role !== 'user' && msg.role !== 'assistant') {
+        return NextResponse.json(
+          { success: false, error: 'Message role must be "user" or "assistant"' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Fetch available tokens for context
     const tokens = await fetchAvailableTokens();
 
@@ -161,22 +185,31 @@ export async function POST(request: Request) {
       { role: 'user', content: userInput },
     ];
 
-    // Call OpenRouter API
-    const openAIResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://monsoon.app',
-        'X-Title': 'Monsoon Trade Ideation',
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-4o',
-        messages: openAIMessages,
-        temperature: 0.7,
-        max_tokens: 1024,
-      }),
-    });
+    // Call OpenRouter API with 30 second timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let openAIResponse: Response;
+    try {
+      openAIResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://monsoon.app',
+          'X-Title': 'Monsoon Trade Ideation',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o',
+          messages: openAIMessages,
+          temperature: 0.7,
+          max_tokens: 1024,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!openAIResponse.ok) {
       const errorData = await openAIResponse.text();
@@ -185,10 +218,13 @@ export async function POST(request: Request) {
     }
 
     const data: OpenAIResponse = await openAIResponse.json();
-    const aiContent = data.choices[0]?.message?.content || '';
+    let aiContent = data.choices[0]?.message?.content || '';
 
     // Extract trade proposal if present
     const proposalData = extractTradeProposal(aiContent);
+
+    // Remove JSON block from displayed content
+    aiContent = aiContent.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
 
     // Build response
     const response: ChatResponse = {
