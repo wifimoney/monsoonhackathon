@@ -1,37 +1,33 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import { Providers } from "@/lib/wagmi";
+import type React from "react"
+import type { Metadata } from "next"
+import { Inter, Geist_Mono } from "next/font/google"
+import { Analytics } from "@vercel/analytics/next"
+import { Web3Provider } from "@/lib/wagmi"
+import "./globals.css"
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const _inter = Inter({ subsets: ["latin"] })
+const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Salt DeFi Dashboard",
-  description: "Non-custodial DeFi asset management with Salt guardrails",
-};
+  title: "Monsoon | DeFi Trading Protocol",
+  description:
+    "The next-generation decentralized trading protocol. Execute trades with unprecedented speed and zero slippage.",
+  generator: 'v0.app'
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <Providers>
+    <html lang="en">
+      <body className="font-sans antialiased">
+        <Web3Provider>
           {children}
-        </Providers>
+        </Web3Provider>
+        <Analytics />
       </body>
     </html>
-  );
+  )
 }

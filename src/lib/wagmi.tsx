@@ -5,79 +5,82 @@ import { arbitrumSepolia, baseSepolia, mainnet, arbitrum, optimism, polygon, bas
 import { bsc, avalanche } from 'viem/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { injected } from 'wagmi/connectors';
-import { ReactNode, useState } from 'react';
-import '@rainbow-me/rainbowkit/styles.css';
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
+import { ReactNode, useState } from 'react';
 import { defineChain, type Chain } from 'viem';
+import '@rainbow-me/rainbowkit/styles.css';
 
 // HyperEVM chain definition
 const hyperEvm = defineChain({
-  id: 999,
-  name: 'HyperEVM',
-  nativeCurrency: {
-    decimals: 18,
-    name: 'Ether',
-    symbol: 'ETH',
-  },
-  rpcUrls: {
-    default: {
-      http: ['https://rpc.hyperliquid.xyz/evm'],
+    id: 999,
+    name: 'HyperEVM',
+    nativeCurrency: {
+        decimals: 18,
+        name: 'Ether',
+        symbol: 'ETH',
     },
-  },
-  blockExplorers: {
-    default: {
-      name: 'HyperEVM Explorer',
-      url: 'https://explorer.hyperliquid.xyz',
+    rpcUrls: {
+        default: {
+            http: ['https://rpc.hyperliquid.xyz/evm'],
+        },
     },
-  },
-  testnet: false,
+    blockExplorers: {
+        default: {
+            name: 'HyperEVM Explorer',
+            url: 'https://explorer.hyperliquid.xyz',
+        },
+    },
+    testnet: false,
 }) as Chain;
 
 export const allChains: readonly [Chain, ...Chain[]] = [
-  mainnet,
-  arbitrum,
-  optimism,
-  polygon,
-  base,
-  bsc,
-  avalanche,
-  hyperEvm,
-  arbitrumSepolia,
-  baseSepolia,
+    mainnet,
+    arbitrum,
+    optimism,
+    polygon,
+    base,
+    bsc,
+    avalanche,
+    hyperEvm,
+    arbitrumSepolia,
+    baseSepolia,
 ];
 
 // Simplified Wagmi config - Injected only (MetaMask, etc) to avoid AppKit 403 errors
 export const wagmiConfig = createConfig({
-  chains: allChains,
-  connectors: [
-    injected(),
-  ],
-  transports: {
-    [mainnet.id]: http(),
-    [arbitrum.id]: http(),
-    [optimism.id]: http(),
-    [polygon.id]: http(),
-    [base.id]: http(),
-    [bsc.id]: http(),
-    [avalanche.id]: http(),
-    [hyperEvm.id]: http(),
-    [arbitrumSepolia.id]: http(),
-    [baseSepolia.id]: http(),
-  },
-  ssr: true,
+    chains: allChains,
+    connectors: [
+        injected(),
+    ],
+    transports: {
+        [mainnet.id]: http(),
+        [arbitrum.id]: http(),
+        [optimism.id]: http(),
+        [polygon.id]: http(),
+        [base.id]: http(),
+        [bsc.id]: http(),
+        [avalanche.id]: http(),
+        [hyperEvm.id]: http(),
+        [arbitrumSepolia.id]: http(),
+        [baseSepolia.id]: http(),
+    },
+    ssr: true,
 });
 
-export function Providers({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
-  const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '';
+// Provider component
+export function Web3Provider({ children }: { children: ReactNode }) {
+    const [queryClient] = useState(() => new QueryClient());
 
-  return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>
-          {children}
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  );
+    return (
+        <WagmiProvider config={wagmiConfig}>
+            <QueryClientProvider client={queryClient}>
+                <RainbowKitProvider>
+                    {children}
+                </RainbowKitProvider>
+            </QueryClientProvider>
+        </WagmiProvider>
+    );
 }
+
+// Alias for backwards compatibility
+export const Providers = Web3Provider;

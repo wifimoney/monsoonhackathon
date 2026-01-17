@@ -1,5 +1,6 @@
 import { checkGuardrails } from './guardrails';
-import type { ActionIntent, GuardrailsConfig, GuardrailsResult } from './types';
+import type { ActionIntent } from './types';
+import type { GuardiansConfig, GuardiansState } from '@/guardians/types';
 
 // ============ TYPES ============
 export interface PolicyCheck {
@@ -35,57 +36,83 @@ export interface SimulationResult {
 }
 
 // ============ SIMULATOR ============
+// ============ SIMULATOR ============
 export async function simulateExecution(
     actionIntent: ActionIntent,
-    guardrailsConfig: GuardrailsConfig
+    guardrailsConfig: GuardiansConfig,
+    state?: GuardiansState // Pass in state for context-aware checks
 ): Promise<SimulationResult> {
     const suggestions: string[] = [];
     const whatIf: WhatIfScenario[] = [];
-    const marketSymbol = actionIntent.market.split('/')[0];
+    const marketSymbol = 'market' in actionIntent ? actionIntent.market.split('/')[0] : 'N/A';
+    const notionalUsd = 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0);
 
     // ===== LOCAL GUARDRAILS =====
-    const localResult = checkGuardrails(actionIntent, guardrailsConfig);
+    // Use the real operational check function
+    const localResult = checkGuardrails(actionIntent, guardrailsConfig, state);
 
-    const localChecks: PolicyCheck[] = [
-        {
-            name: 'Market Allowlist',
-            passed: guardrailsConfig.allowedMarkets.includes(marketSymbol),
-            current: marketSymbol,
-            limit: guardrailsConfig.allowedMarkets.join(', '),
-            severity: 'blocker',
-        },
-        {
+    const localChecks: PolicyCheck[] = [];
+
+    // Map the denials/results to PolicyCheck format for UI
+    if (guardrailsConfig.spend.enabled) {
+        localChecks.push({
             name: 'Transaction Size',
-            passed: actionIntent.notionalUsd <= guardrailsConfig.maxPerTx,
-            current: `$${actionIntent.notionalUsd}`,
-            limit: `$${guardrailsConfig.maxPerTx}`,
+            passed: notionalUsd <= guardrailsConfig.spend.maxPerTrade,
+            current: `$${notionalUsd}`,
+            limit: `$${guardrailsConfig.spend.maxPerTrade}`,
             severity: 'blocker',
-        },
-        {
-            name: 'Slippage Tolerance',
-            passed: actionIntent.maxSlippageBps <= guardrailsConfig.maxSlippageBps,
-            current: `${actionIntent.maxSlippageBps / 100}%`,
-            limit: `${guardrailsConfig.maxSlippageBps / 100}%`,
-            severity: 'warning',
-        },
-    ];
+        });
+    }
 
-    // ===== SALT POLICY SIMULATION =====
-    // For hackathon: simulate Salt policies based on known rules
+    if (guardrailsConfig.timeWindow.enabled) {
+        const now = new Date();
+        const currentHour = now.getUTCHours();
+        const { startHour, endHour } = guardrailsConfig.timeWindow;
+        const isAllowed = startHour <= endHour
+            ? (currentHour >= startHour && currentHour < endHour)
+            : (currentHour >= startHour || currentHour < endHour);
+
+        localChecks.push({
+            name: 'Time Window',
+            passed: isAllowed,
+            current: `${currentHour}:00 UTC`,
+            limit: `${startHour}-${endHour} UTC`,
+            severity: 'blocker'
+        });
+    }
+
+    if (guardrailsConfig.venue.enabled) {
+        // Assuming allowedContracts contains symbols for now as per previous step discussion
+        const isAllowed = guardrailsConfig.venue.allowedContracts.includes(marketSymbol);
+        localChecks.push({
+            name: 'Market Allowlist',
+            passed: isAllowed,
+            current: marketSymbol,
+            limit: 'Allowed List', // Simplified for display
+            severity: 'blocker',
+        });
+    }
+
+    // ===== SALT POLICY SIMULATION (Scenario C) =====
+    // Backed by consistent config, not random demo rules.
+    // In operational mode, Salt policies might duplicate some local guardrails (account Spend Limit)
+    // Here we simulate what Salt WOULD enforce based on the same knowledge.
+
     const saltChecks: PolicyCheck[] = [
         {
-            name: 'Recipient Allowlist (PT1)',
-            passed: true, // Simulated router is always allowed
-            severity: 'info',
+            name: 'Account Spend Limit (Salt)',
+            passed: notionalUsd <= guardrailsConfig.spend.maxDaily, // Assuming Salt also enforces daily limit
+            current: `$${notionalUsd} (Tx)`,
+            limit: `$${guardrailsConfig.spend.maxDaily} (Daily)`,
+            severity: 'blocker',
         },
         {
-            name: 'Transaction Limits (PT3)',
-            passed: actionIntent.notionalUsd <= 500, // Salt hard limit
-            current: `$${actionIntent.notionalUsd}`,
-            limit: '$500',
-            severity: actionIntent.notionalUsd > 500 ? 'blocker' : 'info',
-        },
+            name: 'Whitelisted Recipient',
+            passed: true, // Asset assumes valid recipient for now
+            severity: 'info',
+        }
     ];
+
 
     const localPassed = localChecks.every(c => c.passed || c.severity !== 'blocker');
     const saltPassed = saltChecks.every(c => c.passed || c.severity !== 'blocker');
@@ -95,26 +122,18 @@ export async function simulateExecution(
     const failures = allChecks.filter(c => !c.passed && c.severity === 'blocker');
 
     for (const fail of failures) {
-        if (fail.name.includes('Size') || fail.name.includes('Limit')) {
-            const maxAllowed = guardrailsConfig.maxPerTx;
-            suggestions.push(`Reduce size to $${maxAllowed} or less`);
+        if (fail.name.includes('Size') || fail.name.includes('Spend')) {
+            const maxAllowed = guardrailsConfig.spend.maxPerTrade;
+            const dailyLimit = guardrailsConfig.spend.maxDaily;
 
-            whatIf.push({
-                change: `Size → $${maxAllowed}`,
-                wouldPass: true,
-                description: `Reducing to $${maxAllowed} would pass the limit`,
-            });
-        }
-
-        if (fail.name.includes('Market') || fail.name.includes('Allowlist')) {
-            const allowed = guardrailsConfig.allowedMarkets[0];
-            suggestions.push(`Switch to: ${guardrailsConfig.allowedMarkets.join(', ')}`);
-
-            whatIf.push({
-                change: `Market → ${allowed}`,
-                wouldPass: true,
-                description: `Switching to ${allowed} would pass the allowlist`,
-            });
+            if (notionalUsd > maxAllowed) {
+                suggestions.push(`Reduce size to $${maxAllowed} or less`);
+                whatIf.push({
+                    change: `Size → $${maxAllowed}`,
+                    wouldPass: true,
+                    description: `Reducing to $${maxAllowed} would pass the per-tx limit`,
+                });
+            }
         }
     }
 

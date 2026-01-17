@@ -75,20 +75,42 @@ export interface CreatePositionRequest {
 }
 
 /**
+ * Position asset data from API (longAssets/shortAssets arrays)
+ */
+export interface PositionAsset {
+  coin: string;
+  entryPrice: number;
+  actualSize: number;
+  leverage: number;
+  marginUsed: number;
+  positionValue: number;
+  unrealizedPnl: number;
+}
+
+/**
  * Position data from API
+ * Note: API only returns OPEN positions, so there's no status field
  */
 export interface PearPosition {
   positionId: string;
-  status: 'OPEN' | 'CLOSED' | 'PENDING';
-  longAssets: string[];
-  shortAssets: string[];
-  weights: number[];
+  address?: string;
+  unrealizedPnl: number;           // lowercase 'l' - actual API field
+  unrealizedPnlPercentage: number; // actual API field
+  positionValue: number;           // current USD value
+  entryPositionValue: number;
+  marginUsed: number;
+  longAssets: PositionAsset[];     // array of asset objects
+  shortAssets: PositionAsset[];    // array of asset objects
+  createdAt: string;
+  updatedAt: string;
+  // Legacy fields for backwards compatibility (may be undefined)
+  status?: 'OPEN' | 'CLOSED' | 'PENDING';
+  weights?: number[];
   entryPrice?: number;
   currentPrice?: number;
-  unrealizedPnL?: number;
-  unrealizedPnLPercent?: number;
-  size?: number;
-  createdAt?: string;
+  unrealizedPnL?: number;          // uppercase 'L' - legacy
+  unrealizedPnLPercent?: number;   // legacy
+  size?: number;                   // legacy - use positionValue instead
 }
 
 /**
@@ -102,16 +124,49 @@ export interface PortfolioMetrics {
 }
 
 /**
+ * Trade asset data from API (closedLongAssets/closedShortAssets arrays)
+ */
+export interface TradeAsset {
+  coin: string;
+  entryPrice: number;
+  exitPrice: number;
+  actualSize: number;
+  leverage: number;
+  realizedPnl: number;
+}
+
+/**
  * Trade history entry
+ * Updated to match actual Pear API TradeHistoryDataDto
  */
 export interface TradeHistoryEntry {
-  tradeId: string;
-  pair: string;
-  side: 'LONG' | 'SHORT';
-  size: number;
-  price: number;
-  timestamp: string;
-  realizedPnL: number;
+  tradeHistoryId: string;          // actual API field (not tradeId)
+  positionId: string;
+  realizedPnl: number;             // lowercase 'l'
+  realizedPnlPercentage: number;
+  totalValue: number;
+  totalEntryValue: number;
+  closedLongAssets: TradeAsset[];  // actual API field
+  closedShortAssets: TradeAsset[]; // actual API field
+  positionLongAssets?: string[];
+  positionShortAssets?: string[];
+  createdAt: string;               // actual API field (not timestamp)
+  // Legacy fields for backwards compatibility
+  tradeId?: string;
+  id?: string;
+  pair?: string;
+  symbol?: string;
+  asset?: string;
+  side?: 'LONG' | 'SHORT' | 'long' | 'short' | string;
+  size?: number;
+  notional?: number;
+  price?: number;
+  entryPrice?: number;
+  timestamp?: string;
+  time?: string;
+  realizedPnL?: number;            // uppercase 'L' - legacy
+  pnl?: number;
+  [key: string]: unknown; // Allow additional fields
 }
 
 // ============================================================================
@@ -744,9 +799,10 @@ export async function createPosition(
 /**
  * Get all open positions
  * GET /positions
+ * Note: API returns array directly, not { positions: [...] }
  */
-export async function getPositions(): Promise<{ positions: PearPosition[] }> {
-  return authenticatedRequest<{ positions: PearPosition[] }>('/positions', {
+export async function getPositions(): Promise<PearPosition[]> {
+  return authenticatedRequest<PearPosition[]>('/positions', {
     method: 'GET',
   });
 }
@@ -784,11 +840,10 @@ export async function getPortfolio(): Promise<PortfolioMetrics> {
 /**
  * Get trade history
  * GET /trade-history
+ * Note: API returns array directly, not { trades: [...] }
  */
-export async function getTradeHistory(): Promise<{
-  trades: TradeHistoryEntry[];
-}> {
-  return authenticatedRequest<{ trades: TradeHistoryEntry[] }>('/trade-history', {
+export async function getTradeHistory(): Promise<TradeHistoryEntry[]> {
+  return authenticatedRequest<TradeHistoryEntry[]>('/trade-history', {
     method: 'GET',
   });
 }

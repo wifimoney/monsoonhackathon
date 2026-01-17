@@ -42,6 +42,7 @@ interface WebSocketMessage {
 
 /**
  * Position update message data
+ * Note: API may return array directly or { positions: [...] }
  */
 interface PositionUpdateData {
   positions: PearPosition[];
@@ -49,6 +50,7 @@ interface PositionUpdateData {
 
 /**
  * Trade history update message data
+ * Note: API may return array directly or { trades: [...] }
  */
 interface TradeHistoryUpdateData {
   trades: TradeHistoryEntry[];
@@ -56,12 +58,14 @@ interface TradeHistoryUpdateData {
 
 /**
  * Account summary update message data
+ * Note: API may return different field names, handler normalizes to PortfolioMetrics
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface AccountSummaryUpdateData {
-  totalAccountValue: number;
-  totalUnrealizedPnL: number;
-  totalRealizedPnL: number;
-  marginUsage: number;
+  totalAccountValue?: number;
+  totalUnrealizedPnL?: number;
+  totalRealizedPnL?: number;
+  marginUsage?: number;
 }
 
 /**
@@ -140,34 +144,54 @@ export function usePearWebSocket() {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
 
+      console.log('[WebSocket] Received message:', message.channel, message.data);
+
       switch (message.channel) {
         case 'positions': {
           // Task 6.4: Update React state on position updates (live P&L)
-          const positionData = message.data as PositionUpdateData;
-          if (positionData?.positions) {
-            setPositions(positionData.positions);
+          // API returns array directly or { positions: [...] }
+          const positionData = message.data;
+          console.log('[WebSocket] Position data:', positionData);
+          if (Array.isArray(positionData)) {
+            setPositions(positionData as PearPosition[]);
+          } else if ((positionData as PositionUpdateData)?.positions) {
+            setPositions((positionData as PositionUpdateData).positions);
           }
           break;
         }
 
         case 'trade-histories': {
           // Task 6.4: Update state on trade history updates
-          const tradeData = message.data as TradeHistoryUpdateData;
-          if (tradeData?.trades) {
-            setTradeHistory(tradeData.trades);
+          // API returns array directly or { trades: [...] }
+          const tradeData = message.data;
+          console.log('[WebSocket] Trade history data:', tradeData);
+          if (Array.isArray(tradeData)) {
+            setTradeHistory(tradeData as TradeHistoryEntry[]);
+          } else if ((tradeData as TradeHistoryUpdateData)?.trades) {
+            setTradeHistory((tradeData as TradeHistoryUpdateData).trades);
           }
           break;
         }
 
         case 'account-summary': {
           // Task 6.4: Update state on account summary updates
-          const summaryData = message.data as AccountSummaryUpdateData;
+          const summaryData = message.data as Record<string, unknown>;
+          console.log('[WebSocket] Account summary data:', summaryData);
           if (summaryData) {
+            // Map actual API fields to expected fields
+            // API may use unrealizedPnl (lowercase) and currentOpenInterest
             setAccountSummary({
-              totalAccountValue: summaryData.totalAccountValue,
-              totalUnrealizedPnL: summaryData.totalUnrealizedPnL,
-              totalRealizedPnL: summaryData.totalRealizedPnL,
-              marginUsage: summaryData.marginUsage,
+              totalAccountValue: (summaryData.totalAccountValue as number) ??
+                                 (summaryData.accountValue as number) ??
+                                 (summaryData.currentOpenInterest as number) ?? 0,
+              totalUnrealizedPnL: (summaryData.totalUnrealizedPnL as number) ??
+                                  (summaryData.unrealizedPnL as number) ??
+                                  (summaryData.unrealizedPnl as number) ?? 0,
+              totalRealizedPnL: (summaryData.totalRealizedPnL as number) ??
+                                (summaryData.realizedPnL as number) ??
+                                (summaryData.realizedPnl as number) ?? 0,
+              marginUsage: (summaryData.marginUsage as number) ??
+                           (summaryData.marginRatio as number) ?? 0,
             });
           }
           break;

@@ -59,11 +59,45 @@ function formatPercentage(value: number): string {
 
 /**
  * Get pair string from position assets
+ * Handles both array of strings (legacy) and array of PositionAsset objects (current API)
  */
 function getPairString(position: PearPosition): string {
-  const longStr = position.longAssets.join(',');
-  const shortStr = position.shortAssets.join(',');
+  // Handle array of PositionAsset objects (current API format)
+  const getLongCoins = () => {
+    if (!position.longAssets || position.longAssets.length === 0) return '';
+    const first = position.longAssets[0];
+    if (typeof first === 'string') {
+      return position.longAssets.join(',');
+    }
+    // It's an array of PositionAsset objects
+    return position.longAssets.map((a) => (a as { coin: string }).coin).join(',');
+  };
+
+  const getShortCoins = () => {
+    if (!position.shortAssets || position.shortAssets.length === 0) return '';
+    const first = position.shortAssets[0];
+    if (typeof first === 'string') {
+      return position.shortAssets.join(',');
+    }
+    // It's an array of PositionAsset objects
+    return position.shortAssets.map((a) => (a as { coin: string }).coin).join(',');
+  };
+
+  const longStr = getLongCoins();
+  const shortStr = getShortCoins();
   return `${longStr}/${shortStr}`;
+}
+
+/**
+ * Get display value for long/short assets
+ */
+function getAssetDisplay(assets: PearPosition['longAssets'] | PearPosition['shortAssets']): string {
+  if (!assets || assets.length === 0) return '-';
+  const first = assets[0];
+  if (typeof first === 'string') {
+    return assets.join(', ');
+  }
+  return assets.map((a) => (a as { coin: string }).coin).join(', ');
 }
 
 /**
@@ -81,6 +115,10 @@ function CloseConfirmationDialog({
   onCancel: () => void;
   isClosing: boolean;
 }) {
+  // Use correct field names: unrealizedPnl (lowercase), positionValue
+  const pnl = position.unrealizedPnl ?? position.unrealizedPnL ?? 0;
+  const size = position.positionValue ?? position.size ?? 0;
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="card max-w-md w-full mx-4">
@@ -95,18 +133,16 @@ function CloseConfirmationDialog({
         <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
           <div>
             <span className="text-[var(--muted)]">Size:</span>
-            <span className="ml-2 font-mono">${position.size?.toLocaleString()}</span>
+            <span className="ml-2 font-mono">${size.toLocaleString()}</span>
           </div>
           <div>
             <span className="text-[var(--muted)]">Unrealized P&L:</span>
             <span
               className={`ml-2 font-mono ${
-                (position.unrealizedPnL ?? 0) >= 0
-                  ? 'text-[var(--accent)]'
-                  : 'text-[var(--danger)]'
+                pnl >= 0 ? 'text-[var(--accent)]' : 'text-[var(--danger)]'
               }`}
             >
-              {formatCurrency(position.unrealizedPnL ?? 0)}
+              {formatCurrency(pnl)}
             </span>
           </div>
         </div>
@@ -141,8 +177,11 @@ function PositionCard({
   position: PearPosition;
   onClose: (positionId: string) => void;
 }) {
-  const pnl = position.unrealizedPnL ?? 0;
-  const pnlPercent = position.unrealizedPnLPercent ?? 0;
+  // Use correct field names: unrealizedPnl (lowercase), unrealizedPnlPercentage, positionValue
+  const pnl = position.unrealizedPnl ?? position.unrealizedPnL ?? 0;
+  const pnlPercent = position.unrealizedPnlPercentage ?? position.unrealizedPnLPercent ?? 0;
+  const size = position.positionValue ?? position.size ?? 0;
+  const entryValue = position.entryPositionValue ?? position.entryPrice ?? 0;
   const isProfitable = pnl >= 0;
 
   return (
@@ -160,7 +199,7 @@ function PositionCard({
                 color: 'var(--accent)',
               }}
             >
-              LONG: {position.longAssets.join(', ')}
+              LONG: {getAssetDisplay(position.longAssets)}
             </span>
             <span
               className="text-xs px-2 py-0.5 rounded"
@@ -169,7 +208,7 @@ function PositionCard({
                 color: 'var(--danger)',
               }}
             >
-              SHORT: {position.shortAssets.join(', ')}
+              SHORT: {getAssetDisplay(position.shortAssets)}
             </span>
           </div>
         </div>
@@ -183,16 +222,16 @@ function PositionCard({
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div>
-          <div className="text-[var(--muted)] mb-1">Size</div>
-          <div className="font-mono">${position.size?.toLocaleString() ?? '-'}</div>
+          <div className="text-[var(--muted)] mb-1">Position Value</div>
+          <div className="font-mono">${size.toLocaleString()}</div>
         </div>
         <div>
-          <div className="text-[var(--muted)] mb-1">Entry Price</div>
-          <div className="font-mono">${position.entryPrice?.toLocaleString() ?? '-'}</div>
+          <div className="text-[var(--muted)] mb-1">Entry Value</div>
+          <div className="font-mono">${entryValue.toLocaleString()}</div>
         </div>
         <div>
-          <div className="text-[var(--muted)] mb-1">Current Price</div>
-          <div className="font-mono">${position.currentPrice?.toLocaleString() ?? '-'}</div>
+          <div className="text-[var(--muted)] mb-1">Margin Used</div>
+          <div className="font-mono">${(position.marginUsed ?? 0).toLocaleString()}</div>
         </div>
         <div>
           <div className="text-[var(--muted)] mb-1">Unrealized P&L</div>
@@ -217,7 +256,7 @@ function PositionCard({
  * - Include close button for each position
  */
 export function PositionsTable({
-  positions,
+  positions = [],
   onClosePosition,
   isLoading,
 }: PositionsTableProps) {
@@ -227,8 +266,11 @@ export function PositionsTable({
   );
   const [isClosing, setIsClosing] = useState(false);
 
+  // Ensure positions is always an array
+  const positionsList = Array.isArray(positions) ? positions : [];
+
   const handleCloseClick = (positionId: string) => {
-    const position = positions.find((p) => p.positionId === positionId);
+    const position = positionsList.find((p) => p.positionId === positionId);
     if (position) {
       setConfirmingPosition(position);
     }
@@ -266,7 +308,7 @@ export function PositionsTable({
   }
 
   // Task 5.8: Empty state
-  if (positions.length === 0) {
+  if (positionsList.length === 0) {
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Open Positions</h3>
@@ -283,7 +325,7 @@ export function PositionsTable({
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Open Positions</h3>
-      {positions.map((position) => (
+      {positionsList.map((position) => (
         <PositionCard
           key={position.positionId}
           position={position}

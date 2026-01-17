@@ -4,10 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const tabs = [
-    { name: 'Onboard', href: '/onboard' },
     { name: 'Trade', href: '/trade' },
     { name: 'Portfolio', href: '/portfolio' },
-    { name: 'Guardians', href: '/guardians' },
+    { name: 'Dashboard', href: '/dashboard' },
 ];
 
 export function TabNav() {

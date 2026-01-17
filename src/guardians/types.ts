@@ -59,16 +59,30 @@ export interface TimeWindowConfig {
     enabled: boolean;
     startHour: number; // 0-23 UTC
     endHour: number;   // 0-23 UTC
-    // Dev toggle for demo
-    simulateOutsideHours?: boolean;
 }
 
 export interface LossConfig {
     enabled: boolean;
     maxDrawdown: number;
     halted: boolean;
-    // Dev toggle for demo
-    simulateDrawdownBreach?: boolean;
+}
+
+// ============ STRATEGY CONFIG ============
+export interface StrategyConfig {
+    // Basis/Funding Arb
+    minFundingRate?: number;      // e.g., 0.0001 (0.01%)
+    maxBasisSpread?: number;      // max spot-perp basis
+
+    // Auto-Hedge Delta
+    deltaThreshold?: number;      // notional delta to trigger hedge
+    maxHedgeSize?: number;        // max hedge per action
+
+    // Market Hours
+    weekendLock?: boolean;        // block Sat/Sun trading
+
+    // Drawdown Stop
+    accountStatus?: 'active' | 'paused';
+    requireManualResume?: boolean;
 }
 
 export interface GuardiansConfig {
@@ -79,6 +93,7 @@ export interface GuardiansConfig {
     rate: RateConfig;
     timeWindow: TimeWindowConfig;
     loss: LossConfig;
+    strategy?: StrategyConfig;
 }
 
 // ============ STATE TYPES ============
@@ -149,7 +164,9 @@ export interface GuardianPolicy {
 }
 
 // ============ PRESETS ============
-export type GuardianPreset = 'default' | 'conservative' | 'pro';
+export type GuardianPreset =
+    | 'default' | 'conservative' | 'pro'
+    | 'basisArb' | 'autoHedge' | 'marketHours' | 'drawdownStop';
 
 export const GUARDIAN_PRESETS: Record<GuardianPreset, GuardiansConfig> = {
     default: {
@@ -190,6 +207,74 @@ export const GUARDIAN_PRESETS: Record<GuardianPreset, GuardiansConfig> = {
         rate: { enabled: true, maxPerDay: 50, cooldownSeconds: 10 },
         timeWindow: { enabled: false, startHour: 0, endHour: 24 },
         loss: { enabled: true, maxDrawdown: 500, halted: false },
+    },
+    // ============ STRATEGY PRESETS ============
+    basisArb: {
+        spend: { enabled: true, maxPerTrade: 250, maxDaily: 1000 },
+        leverage: { enabled: true, maxLeverage: 3 },
+        exposure: { enabled: true, maxPerAsset: 1000 },
+        venue: {
+            enabled: true,
+            allowedContracts: ['GOLD-USDH', 'OIL-USDH', 'ETH-PERP'],
+            allowedRecipients: [],
+        },
+        rate: { enabled: true, maxPerDay: 20, cooldownSeconds: 30 },
+        timeWindow: { enabled: false, startHour: 0, endHour: 24 },
+        loss: { enabled: true, maxDrawdown: 200, halted: false },
+        strategy: {
+            minFundingRate: 0.0001,  // 0.01% per 8h
+            maxBasisSpread: 0.005,   // 0.5% max
+        },
+    },
+    autoHedge: {
+        spend: { enabled: true, maxPerTrade: 100, maxDaily: 500 },
+        leverage: { enabled: true, maxLeverage: 2 },
+        exposure: { enabled: true, maxPerAsset: 500 },
+        venue: {
+            enabled: true,
+            allowedContracts: ['ETH-PERP', 'BTC-PERP'],
+            allowedRecipients: [],
+        },
+        rate: { enabled: true, maxPerDay: 50, cooldownSeconds: 10 },
+        timeWindow: { enabled: true, startHour: 8, endHour: 22 },
+        loss: { enabled: true, maxDrawdown: 150, halted: false },
+        strategy: {
+            deltaThreshold: 50,    // $50 notional drift triggers hedge
+            maxHedgeSize: 100,     // max $100 hedge per action
+        },
+    },
+    marketHours: {
+        spend: { enabled: true, maxPerTrade: 250, maxDaily: 1000 },
+        leverage: { enabled: true, maxLeverage: 3 },
+        exposure: { enabled: true, maxPerAsset: 500 },
+        venue: {
+            enabled: true,
+            allowedContracts: [],
+            allowedRecipients: [],
+        },
+        rate: { enabled: true, maxPerDay: 20, cooldownSeconds: 30 },
+        timeWindow: { enabled: true, startHour: 9, endHour: 17 },
+        loss: { enabled: true, maxDrawdown: 200, halted: false },
+        strategy: {
+            weekendLock: true,     // Block Sat/Sun
+        },
+    },
+    drawdownStop: {
+        spend: { enabled: true, maxPerTrade: 250, maxDaily: 1000 },
+        leverage: { enabled: true, maxLeverage: 3 },
+        exposure: { enabled: true, maxPerAsset: 500 },
+        venue: {
+            enabled: true,
+            allowedContracts: [],
+            allowedRecipients: [],
+        },
+        rate: { enabled: true, maxPerDay: 20, cooldownSeconds: 30 },
+        timeWindow: { enabled: false, startHour: 0, endHour: 24 },
+        loss: { enabled: true, maxDrawdown: 100, halted: false },
+        strategy: {
+            accountStatus: 'active',
+            requireManualResume: true,
+        },
     },
 };
 
@@ -243,3 +328,49 @@ export const GUARDIAN_INFO: Record<GuardianType, {
         saltNative: false,
     },
 };
+
+// ============ STRATEGY PRESET METADATA ============
+export type StrategyPresetType = 'basisArb' | 'autoHedge' | 'marketHours' | 'drawdownStop';
+
+export const STRATEGY_PRESET_INFO: Record<StrategyPresetType, {
+    name: string;
+    icon: string;
+    description: string;
+    keyPolicies: string[];
+    passCondition: string;
+    failCondition: string;
+}> = {
+    basisArb: {
+        name: 'Basis/Funding Arb',
+        icon: '📊',
+        description: 'Execute only when funding ≥ threshold and exposure < cap',
+        keyPolicies: ['Max leverage ≤ 3x', 'Max exposure $1000', 'Only GOLD/OIL markets'],
+        passCondition: 'Funding ≥ 0.01% & exposure under cap',
+        failCondition: 'Funding too low or exposure cap reached',
+    },
+    autoHedge: {
+        name: 'Auto-Hedge Delta',
+        icon: '⚖️',
+        description: 'Hedge when delta drift exceeds threshold',
+        keyPolicies: ['Delta threshold $50', 'Max hedge $100', 'ETH/BTC perps only'],
+        passCondition: 'Delta > $50, hedge within limits',
+        failCondition: 'Delta < threshold or hedge exceeds cap',
+    },
+    marketHours: {
+        name: 'Market Hours Mode',
+        icon: '🕐',
+        description: 'Block all trades outside 9AM-5PM UTC',
+        keyPolicies: ['Trading hours 9-17 UTC', 'Weekend lock enabled', 'All trades blocked'],
+        passCondition: 'Within trading window (weekday)',
+        failCondition: 'Outside hours or weekend',
+    },
+    drawdownStop: {
+        name: 'Drawdown Stop',
+        icon: '🛑',
+        description: 'Freeze trading when PnL drops below threshold',
+        keyPolicies: ['Max drawdown $100', 'Manual resume required', 'Circuit breaker'],
+        passCondition: 'PnL above -$100 threshold',
+        failCondition: 'Drawdown ≥ $100 → PAUSED',
+    },
+};
+

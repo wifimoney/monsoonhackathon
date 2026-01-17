@@ -63,10 +63,11 @@ export async function sendTransaction({
 
         return new Promise((resolve) => {
             // Observe state transitions
-            transfer.onPropose((data) => log(`PROPOSE: ${JSON.stringify(data)}`));
-            transfer.onSign((data) => log(`SIGNING: ${JSON.stringify(data)}`));
-            transfer.onCombine((data) => log(`COMBINE: ${JSON.stringify(data)}`));
-            transfer.onBroadcast((data) => log(`BROADCAST: ${JSON.stringify(data)}`));
+            // Observe state transitions
+            transfer.onPropose((data: any) => log(`PROPOSE: ${JSON.stringify(data)}`));
+            transfer.onSign((data: any) => log(`SIGNING: ${JSON.stringify(data)}`));
+            transfer.onCombine((data: any) => log(`COMBINE: ${JSON.stringify(data)}`));
+            transfer.onBroadcast((data: any) => log(`BROADCAST: ${JSON.stringify(data)}`));
 
             transfer.onEnd((data: { receipt: { transactionHash: string } }) => {
                 if (data?.receipt?.transactionHash) {
@@ -83,22 +84,22 @@ export async function sendTransaction({
             });
 
             // Observe error states
-            transfer.onTransition(0, 5, (data) => {
+            transfer.onTransition(0, 5, (data: any) => {
                 log(`IDLE->END Error starting transfer: ${JSON.stringify(data)}`, 'error');
                 resolve({ success: false, error: "Error starting transfer", logs });
             });
 
-            transfer.onTransition(1, 5, (data) => {
+            transfer.onTransition(1, 5, (data: any) => {
                 log(`PROPOSE->END Policy breach: ${JSON.stringify(data)}`, 'error');
                 resolve({ success: false, error: "Policy breach - transaction denied", logs });
             });
 
-            transfer.onTransition(2, 5, (data) => {
+            transfer.onTransition(2, 5, (data: any) => {
                 log(`SIGN->END Error signing: ${JSON.stringify(data)}`, 'error');
                 resolve({ success: false, error: "Error signing transaction", logs });
             });
 
-            transfer.onTransition(3, 5, (data) => {
+            transfer.onTransition(3, 5, (data: any) => {
                 log(`COMBINE->END Error combining: ${JSON.stringify(data)}`, 'error');
                 resolve({ success: false, error: "Error combining signatures", logs });
             });

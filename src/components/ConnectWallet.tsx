@@ -100,10 +100,10 @@ export function ConnectWallet() {
         try {
             // Disconnect current connection
             disconnect();
-            
+
             // Small delay to ensure disconnect completes
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             // Reconnect with the selected address
             // Note: This depends on wallet support for account switching
             if (window.ethereum && window.ethereum.isMetaMask) {
@@ -113,12 +113,12 @@ export function ConnectWallet() {
                     params: [{ eth_accounts: { account: newAddress } }]
                 });
             }
-            
+
             // Reconnect with the same connector
             if (connector) {
                 connect({ connector });
             }
-            
+
             setSelectedAddress(newAddress);
             setShowWalletSelector(false);
         } catch (error) {
@@ -136,7 +136,7 @@ export function ConnectWallet() {
                             {chain?.name || 'Unknown Chain'}
                         </span>
                     </div>
-                    
+
                     {/* Wallet Address Selector */}
                     <div className="relative" ref={walletSelectorRef}>
                         <button
@@ -158,7 +158,7 @@ export function ConnectWallet() {
                                 <path d="M3 4.5L6 7.5L9 4.5" />
                             </svg>
                         </button>
-                        
+
                         {showWalletSelector && (
                             <div className="absolute right-0 mt-2 w-72 card shadow-lg z-50 max-h-96 overflow-y-auto">
                                 <div className="px-4 py-3 border-b border-[var(--card-border)]">
@@ -176,15 +176,15 @@ export function ConnectWallet() {
                                                 key={addr}
                                                 onClick={() => handleAddressSwitch(addr)}
                                                 className={`w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center justify-between gap-3 ${
-                                                    addr.toLowerCase() === address?.toLowerCase() 
-                                                        ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]' 
+                                                    addr.toLowerCase() === address?.toLowerCase()
+                                                        ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]'
                                                         : ''
                                                 }`}
                                             >
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
                                                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                                        addr.toLowerCase() === address?.toLowerCase() 
-                                                            ? 'bg-[var(--primary)]' 
+                                                        addr.toLowerCase() === address?.toLowerCase()
+                                                            ? 'bg-[var(--primary)]'
                                                             : 'bg-[var(--muted)]'
                                                     }`} />
                                                     <span className="font-mono text-sm truncate">

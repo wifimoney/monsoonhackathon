@@ -72,10 +72,15 @@ export default function PortfolioPage() {
     setPositionsLoading(true);
     try {
       const positionsData = await getPositions();
-      setPositions(positionsData.positions.filter((p) => p.status === 'OPEN'));
+      console.log('[Portfolio] Raw positions response:', positionsData);
+      // API returns array directly (only open positions)
+      const positionsList = Array.isArray(positionsData) ? positionsData : [];
+      console.log('[Portfolio] Positions list:', positionsList);
+      // API only returns OPEN positions, no need to filter by status
+      setPositions(positionsList);
     } catch (err) {
       console.error('Failed to fetch positions:', err);
-      setError('Failed to load positions');
+      setPositions([]);
     } finally {
       setPositionsLoading(false);
     }
@@ -84,9 +89,14 @@ export default function PortfolioPage() {
     setHistoryLoading(true);
     try {
       const historyData = await getTradeHistory();
-      setTradeHistory(historyData.trades);
+      console.log('[Portfolio] Raw trade history response:', historyData);
+      // API returns array directly (not { trades: [...] })
+      const tradesList = Array.isArray(historyData) ? historyData : [];
+      console.log('[Portfolio] Trade history list:', tradesList);
+      setTradeHistory(tradesList);
     } catch (err) {
       console.error('Failed to fetch trade history:', err);
+      setTradeHistory([]);
     } finally {
       setHistoryLoading(false);
     }
@@ -145,7 +155,8 @@ export default function PortfolioPage() {
    */
   useEffect(() => {
     if (wsPositions.length > 0) {
-      setPositions(wsPositions.filter((p) => p.status === 'OPEN'));
+      // API only returns OPEN positions, no need to filter by status
+      setPositions(wsPositions);
     }
   }, [wsPositions]);
 
@@ -162,9 +173,8 @@ export default function PortfolioPage() {
   }, [wsAccountSummary]);
 
   // Derive display data - use WebSocket data when available (real-time), otherwise REST API data
-  const displayPositions = wsPositions.length > 0
-    ? wsPositions.filter((p) => p.status === 'OPEN')
-    : positions;
+  // API only returns OPEN positions, no need to filter by status
+  const displayPositions = wsPositions.length > 0 ? wsPositions : positions;
   const displayTradeHistory = wsTradeHistory.length > 0 ? wsTradeHistory : tradeHistory;
   const displayMetrics = wsAccountSummary || metrics;
 

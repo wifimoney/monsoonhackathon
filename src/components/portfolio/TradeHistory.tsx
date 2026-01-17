@@ -34,7 +34,10 @@ function TradeHistorySkeleton() {
 /**
  * Format currency value
  */
-function formatCurrency(value: number): string {
+function formatCurrency(value: number | undefined | null): string {
+  if (value === undefined || value === null || isNaN(value)) {
+    return '$0.00';
+  }
   const absValue = Math.abs(value);
   const formatted = absValue.toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -47,38 +50,94 @@ function formatCurrency(value: number): string {
 /**
  * Format timestamp to readable date/time
  */
-function formatTimestamp(timestamp: string): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function formatTimestamp(timestamp: string | undefined | null): string {
+  if (!timestamp) return 'N/A';
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return 'N/A';
+  }
+}
+
+/**
+ * Get pair string from trade assets
+ * Handles closedLongAssets and closedShortAssets from current API
+ */
+function getTradePairString(trade: TradeHistoryEntry): string {
+  // Try to build pair from closedLongAssets/closedShortAssets (current API format)
+  const getLongCoins = () => {
+    if (trade.closedLongAssets && trade.closedLongAssets.length > 0) {
+      return trade.closedLongAssets.map((a) => a.coin).join(',');
+    }
+    if (trade.positionLongAssets && trade.positionLongAssets.length > 0) {
+      return trade.positionLongAssets.join(',');
+    }
+    return '';
+  };
+
+  const getShortCoins = () => {
+    if (trade.closedShortAssets && trade.closedShortAssets.length > 0) {
+      return trade.closedShortAssets.map((a) => a.coin).join(',');
+    }
+    if (trade.positionShortAssets && trade.positionShortAssets.length > 0) {
+      return trade.positionShortAssets.join(',');
+    }
+    return '';
+  };
+
+  const longStr = getLongCoins();
+  const shortStr = getShortCoins();
+
+  if (longStr && shortStr) {
+    return `${longStr}/${shortStr}`;
+  }
+
+  // Fall back to legacy fields
+  return trade.pair ?? trade.symbol ?? trade.asset ?? 'Unknown';
 }
 
 /**
  * Single trade history row
  */
 function TradeHistoryRow({ trade }: { trade: TradeHistoryEntry }) {
-  const isLong = trade.side === 'LONG';
-  const hasPnL = trade.realizedPnL !== 0;
-  const isProfitable = trade.realizedPnL > 0;
+  // Use correct field names: realizedPnl (lowercase), createdAt, totalValue
+  const pnl = trade.realizedPnl ?? trade.realizedPnL ?? trade.pnl ?? 0;
+  const pnlPercent = trade.realizedPnlPercentage ?? 0;
+  const hasPnL = pnl !== 0;
+  const isProfitable = pnl > 0;
+  const size = trade.totalValue ?? trade.size ?? trade.notional ?? 0;
+  const entryValue = trade.totalEntryValue ?? trade.price ?? trade.entryPrice ?? 0;
+  const pair = getTradePairString(trade);
+  const timestamp = trade.createdAt ?? trade.timestamp ?? trade.time ?? new Date().toISOString();
+
+  // Determine if long or short based on assets
+  const hasLongAssets = (trade.closedLongAssets && trade.closedLongAssets.length > 0) ||
+                        (trade.positionLongAssets && trade.positionLongAssets.length > 0);
+  const hasShortAssets = (trade.closedShortAssets && trade.closedShortAssets.length > 0) ||
+                         (trade.positionShortAssets && trade.positionShortAssets.length > 0);
 
   return (
     <div className="border-b border-[var(--card-border)] py-3 last:border-0">
       <div className="flex justify-between items-start">
         <div className="flex items-center gap-4">
-          <span className="font-mono font-semibold">{trade.pair}</span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded font-semibold ${
-              isLong
-                ? 'bg-[rgba(34,197,94,0.2)] text-[var(--accent)]'
-                : 'bg-[rgba(239,68,68,0.2)] text-[var(--danger)]'
-            }`}
-          >
-            {trade.side}
-          </span>
+          <span className="font-mono font-semibold">{pair}</span>
+          {hasLongAssets && (
+            <span className="text-xs px-2 py-0.5 rounded font-semibold bg-[rgba(34,197,94,0.2)] text-[var(--accent)]">
+              LONG
+            </span>
+          )}
+          {hasShortAssets && (
+            <span className="text-xs px-2 py-0.5 rounded font-semibold bg-[rgba(239,68,68,0.2)] text-[var(--danger)]">
+              SHORT
+            </span>
+          )}
         </div>
         <div className="text-right">
           <div
@@ -90,16 +149,19 @@ function TradeHistoryRow({ trade }: { trade: TradeHistoryEntry }) {
                 : 'text-[var(--muted)]'
             }`}
           >
-            {formatCurrency(trade.realizedPnL)}
+            {formatCurrency(pnl)}
+            {pnlPercent !== 0 && (
+              <span className="text-xs ml-1">({pnlPercent.toFixed(2)}%)</span>
+            )}
           </div>
         </div>
       </div>
       <div className="flex justify-between items-center mt-2 text-sm text-[var(--muted)]">
         <div className="flex items-center gap-4">
-          <span>Size: <span className="font-mono">${trade.size.toLocaleString()}</span></span>
-          <span>Price: <span className="font-mono">${trade.price.toLocaleString()}</span></span>
+          <span>Value: <span className="font-mono">${size.toLocaleString()}</span></span>
+          <span>Entry: <span className="font-mono">${entryValue.toLocaleString()}</span></span>
         </div>
-        <span>{formatTimestamp(trade.timestamp)}</span>
+        <span>{formatTimestamp(timestamp)}</span>
       </div>
     </div>
   );
@@ -111,11 +173,15 @@ function TradeHistoryRow({ trade }: { trade: TradeHistoryEntry }) {
  * - Show: pair, side, size, price, timestamp, realized P&L
  * - Sortable by timestamp (most recent first)
  */
-export function TradeHistory({ trades, isLoading }: TradeHistoryProps) {
+export function TradeHistory({ trades = [], isLoading }: TradeHistoryProps) {
   // Sort trades by timestamp (most recent first)
-  const sortedTrades = [...trades].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
+  // Use createdAt (actual API field) with fallback to timestamp
+  const tradesList = Array.isArray(trades) ? trades : [];
+  const sortedTrades = [...tradesList].sort((a, b) => {
+    const aTime = a.createdAt ?? a.timestamp ?? '';
+    const bTime = b.createdAt ?? b.timestamp ?? '';
+    return new Date(bTime).getTime() - new Date(aTime).getTime();
+  });
 
   // Task 5.8: Loading skeletons
   if (isLoading) {
@@ -132,7 +198,7 @@ export function TradeHistory({ trades, isLoading }: TradeHistoryProps) {
   }
 
   // Task 5.8: Empty state
-  if (trades.length === 0) {
+  if (tradesList.length === 0) {
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Trade History</h3>
@@ -150,8 +216,11 @@ export function TradeHistory({ trades, isLoading }: TradeHistoryProps) {
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Trade History</h3>
       <div className="card p-4">
-        {sortedTrades.map((trade) => (
-          <TradeHistoryRow key={trade.tradeId} trade={trade} />
+        {sortedTrades.map((trade, index) => (
+          <TradeHistoryRow
+            key={trade.tradeHistoryId ?? trade.tradeId ?? trade.id ?? `trade-${index}`}
+            trade={trade}
+          />
         ))}
       </div>
     </div>
