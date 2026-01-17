@@ -54,7 +54,7 @@ Local risk engine with 7 guardian types protecting your automation.
 | 🛑 **Loss** | Drawdown kill switch | ❌ Local |
 
 **Files:**
-- **`types.ts`** - Guardian configs, presets (Conservative/Default/Pro)
+- **`types.ts`** - Guardian configs, presets, strategy configs
 - **`state.ts`** - Persistent state (daily spend, trade count, positions)
 - **`risk-engine.ts`** - Central check function for all guardians
 
@@ -66,21 +66,34 @@ Tamper-resistant policy enforcement layer.
 - **`chains.ts`** - Chain configuration (HyperEVM, Arbitrum Sepolia, Base Sepolia)
 - **`types.ts`** - PolicyBreach, Guardrails, TransferResult types
 
-### 4. **Advanced Features**
+### 4. **Strategy Presets** (`src/guardians/types.ts`)
+Pre-configured "Robo Manager" strategies for specific use cases:
 
-#### Policy Simulation
-- Predicted outcome before execution
-- Real-time "Would Pass/Fail" feedback
+| Preset | Purpose | Key Policies |
+|--------|---------|--------------|
+| 📊 **Basis/Funding Arb** | Funding/basis arbitrage | Min funding rate, max exposure |
+| ⚖️ **Auto-Hedge Delta** | Delta-neutral hedging | Delta threshold, max hedge size |
+| 🕐 **Market Hours Mode** | Time-restricted trading | 9-17 UTC, weekend lock |
+| 🛑 **Drawdown Stop** | Circuit breaker | Max drawdown, account pause |
 
-#### Autonomy Levels
-- 🔒 **Manual**: 100% human approval required
-- 🤝 **Semi-Auto**: Auto-approve small, safe trades
-- 🤖 **Auto-Bounded**: Trust Salt policies completely
-- ⚡ **Full Auto**: Maximum freedom (requires override)
+### 5. **Human-in-the-Loop Approvals** (`src/approvals/`)
+Explicit approval flow for agent automation.
 
-#### Breach Analytics
-- Track policy violations by type
-- Visual charts and suggestions
+- **`types.ts`** - PendingAction, ActionType, ApprovalStatus
+- **`store.ts`** - Propose/approve/reject logic
+- **API**: `/api/approvals` - List & propose, `/api/approvals/[id]` - Approve/reject
+
+**Flow:**
+```
+1️⃣ Agent proposes action → 2️⃣ Policy check → 3️⃣ Human approves → 4️⃣ Salt executes
+```
+
+### 6. **Audit Trail** (`src/audit/`)
+SQLite-backed audit logging for all actions.
+
+- **`db.ts`** - SQLite database with WAL mode
+- **`store.ts`** - CRUD operations, filtering, stats, CSV export
+- **`types.ts`** - AuditRecord, AuditFilter, AuditStats
 
 ---
 
@@ -92,11 +105,15 @@ monsoonhackathon/
 │   ├── agent/                    # Trading agent core
 │   ├── guardians/                # Local risk engine (Robo Guardians)
 │   ├── salt/                     # Salt SDK integration
+│   ├── approvals/                # Human-in-the-loop approval system
+│   ├── audit/                    # Audit trail (SQLite)
 │   ├── openrouter/               # LLM client
 │   │
 │   ├── components/
 │   │   ├── chat/                 # Chat trader UI
-│   │   ├── guardians/            # Guardian configuration UI
+│   │   ├── guardians/            # Guardian configuration + Strategy presets
+│   │   ├── approvals/            # Pending actions queue, action cards
+│   │   ├── audit/                # Audit table, filters, stats, detail view
 │   │   ├── salt/                 # Salt UI (Simulators, Lifecycle)
 │   │   └── TabNav.tsx            # Main navigation
 │   │
@@ -104,13 +121,18 @@ monsoonhackathon/
 │   │   ├── (tabs)/               # Main app pages
 │   │   │   ├── onboard/          # Onboarding & Connection
 │   │   │   ├── trade/            # Chat Trading Interface
-│   │   │   └── guardians/        # Guardian Configuration
+│   │   │   ├── agent/            # Robo Manager (Human-in-the-Loop)
+│   │   │   ├── guardians/        # Guardian Configuration + Strategies
+│   │   │   └── audit/            # Audit Log & Receipts
 │   │   │
 │   │   └── api/                  # API Routes
 │   │       ├── chat/             # Intent & Execution
-│   │       ├── guardians/        # Config & State
+│   │       ├── guardians/        # Config, State, Strategy eligibility
+│   │       ├── approvals/        # Pending actions CRUD
+│   │       ├── audit/            # Audit records, stats, export
 │   │       └── salt/             # Simulation & Status
 │   │
+├── data/                         # SQLite database (gitignored)
 ├── scripts/
 │   ├── check-salt-connection.ts  # Verify SDK auth
 │   └── test-guardrails-trades.ts # Full system test suite
@@ -152,6 +174,7 @@ AGENT="SOMNIA"
 
 # Salt Account
 ALLOWED_RECIPIENT=0x...
+SALT_ORG_ID=your_org_id
 SALT_ACCOUNT_ID=your_account_id
 
 # LLM
@@ -178,14 +201,30 @@ Open [http://localhost:3000](http://localhost:3000)
 - Market matching with confidence scores
 - Instant guardrail feedback
 
-### 2. **Guardians Page** (`/guardians`)
+### 2. **Agent Page** (`/agent`) 🆕
+**"Human-in-the-loop automation."**
+- **Robo Manager Actions**: Auto-hedge, Deploy Liquidity, Rebalance, Basket Trade
+- **Pending Queue**: Actions awaiting approval with countdown timers
+- **Approve/Reject**: One-click decisions with policy check status
+- **Recent Decisions**: History of approved/rejected actions
+
+### 3. **Guardians Page** (`/guardians`)
 **"Configure your safety net."**
 - **Presets**: One-click switch between Conservative/Default/Pro
+- **Strategy Presets**: Basis Arb, Auto-Hedge, Market Hours, Drawdown Stop
 - **Live Counters**: Track remaining daily budget and trades
 - **Toggles**: Enable/disable individual guardians
-- **Test Mode**: Simulate denials and kill switches
+- **Test Mode**: Simulate denials and strategy eligibility
 
-### 3. **Onboard Page** (`/onboard`)
+### 4. **Audit Page** (`/audit`) 🆕
+**"Complete transaction history."**
+- **Stats Dashboard**: Total actions, success rate, denials, volume
+- **Filterable Table**: By status, action type, category, time range
+- **Detail View**: Full audit record with policy denials
+- **CSV Export**: Download for offline analysis
+- **Auto-Refresh**: Real-time updates
+
+### 5. **Onboard Page** (`/onboard`)
 **"Connect and verify."**
 - Wallet connection (Injected/MetaMask)
 - Salt account status
@@ -219,10 +258,34 @@ export $(grep -v '^#' .env.local | xargs) && npx tsx scripts/test-guardrails-tra
 export $(grep -v '^#' .env.local | xargs) && npx tsx scripts/check-salt-connection.ts
 ```
 
-### 3. Manual UI Testing
-1. Go to **/guardians**
-2. Click "Test Denial" on any card (e.g., Spend Guardian)
-3. See the toast notification: "TEST: Trade size $500 exceeds max $250"
+### 3. Test Strategy Presets
+```bash
+# Test Basis Arb eligibility
+curl "http://localhost:3000/api/guardians/strategy?strategy=basisArb"
+
+# Test Market Hours (blocked on weekends)
+curl "http://localhost:3000/api/guardians/strategy?strategy=marketHours"
+
+# Simulate failure
+curl "http://localhost:3000/api/guardians/strategy?strategy=basisArb&fail=true"
+```
+
+### 4. Test Approvals Flow
+```bash
+# Create demo pending actions
+curl -X POST "http://localhost:3000/api/approvals" -d '{"demo": true}'
+
+# List pending actions
+curl "http://localhost:3000/api/approvals"
+
+# Approve an action
+curl -X POST "http://localhost:3000/api/approvals/ACTION_ID" -d '{"action": "approve"}'
+```
+
+### 5. Manual UI Testing
+1. Go to **/guardians** → Scroll to Strategy Presets → Click "Test"
+2. Go to **/agent** → Click "Create Demo Pending Actions" → Approve/Reject
+3. Go to **/audit** → View logged actions and filter
 
 ---
 
@@ -238,6 +301,16 @@ export $(grep -v '^#' .env.local | xargs) && npx tsx scripts/check-salt-connecti
 | **Purpose** | Operational safety | Catastrophic loss prevention |
 
 **Best Practice:** Use Local Guardrails for day-to-day risk management and Salt Policies for hard limits that must never be breached.
+
+---
+
+## 🆕 New Features Summary
+
+| Feature | Tab | Description |
+|---------|-----|-------------|
+| **Strategy Presets** | `/guardians` | 4 pre-configured trading strategies with eligibility checks |
+| **Human-in-the-Loop** | `/agent` | Propose → Approve → Execute flow for automation |
+| **Audit Trail** | `/audit` | SQLite-backed logging with filtering and export |
 
 ---
 

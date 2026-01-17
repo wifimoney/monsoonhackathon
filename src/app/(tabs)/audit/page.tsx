@@ -1,25 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-
-type AuditEntry = {
-    id: string;
-    timestamp: number;
-    actionType: string;
-    status: string;
-    market?: string;
-    notionalUsd?: number;
-    txHash?: string;
-    reason?: string;
-};
+import type { AuditRecord, AuditStatus } from '@/audit/types';
+import { AUDIT_STATUS_COLORS, AUDIT_STATUS_ICONS } from '@/audit/types';
 
 export default function AuditPage() {
-    const [entries, setEntries] = useState<AuditEntry[]>([]);
+    const [entries, setEntries] = useState<AuditRecord[]>([]);
+    const [loading, setLoading] = useState(true);
 
     const fetchEntries = async () => {
-        const res = await fetch('/api/audit/logs?limit=50');
-        const data = await res.json();
-        setEntries(data.entries || []);
+        try {
+            const res = await fetch('/api/audit?limit=50');
+            const data = await res.json();
+            setEntries(data.records || []);
+        } catch (e) {
+            console.error('Failed to fetch audit entries', e);
+        }
+        setLoading(false);
     };
 
     useEffect(() => {
@@ -27,6 +24,18 @@ export default function AuditPage() {
         const interval = setInterval(fetchEntries, 10000);
         return () => clearInterval(interval);
     }, []);
+
+    const getStatusColor = (status: AuditStatus) => {
+        const colors: Record<AuditStatus, string> = {
+            approved: 'text-green-400 bg-green-900/20',
+            denied: 'text-red-400 bg-red-900/20',
+            pending: 'text-yellow-400 bg-yellow-900/20',
+            filled: 'text-green-400 bg-green-900/20',
+            partial: 'text-blue-400 bg-blue-900/20',
+            failed: 'text-orange-400 bg-orange-900/20',
+        };
+        return colors[status] || 'text-zinc-400';
+    };
 
     return (
         <div className="space-y-6">
@@ -43,7 +52,9 @@ export default function AuditPage() {
                     <button onClick={fetchEntries} className="btn btn-secondary">Refresh</button>
                 </div>
 
-                {entries.length === 0 ? (
+                {loading ? (
+                    <p className="text-xs text-[var(--muted)]">Loading...</p>
+                ) : entries.length === 0 ? (
                     <p className="text-xs text-[var(--muted)]">No audit entries yet.</p>
                 ) : (
                     <div className="space-y-2 text-xs">
@@ -54,15 +65,29 @@ export default function AuditPage() {
                             >
                                 <div>
                                     <p className="text-white">
-                                        {entry.actionType.replace('_', ' ')} {entry.market ? `• ${entry.market}` : ''}
+                                        {AUDIT_STATUS_ICONS[entry.status] || '📋'}{' '}
+                                        {entry.actionType?.replace('_', ' ') || 'unknown'}{' '}
+                                        {entry.payload?.market ? `• ${entry.payload.market}` : ''}
                                     </p>
-                                    {entry.reason && (
-                                        <p className="text-[var(--muted)]">{entry.reason}</p>
+                                    <p className="text-[var(--muted)]">
+                                        {entry.account?.name || 'Unknown'} • {entry.source}
+                                    </p>
+                                    {entry.result?.denials?.length > 0 && (
+                                        <p className="text-red-400 mt-1">
+                                            {entry.result.denials.map(d => d.reason).join(', ')}
+                                        </p>
                                     )}
                                 </div>
-                                <div className="text-right text-[var(--muted)]">
-                                    <p>{entry.status.toUpperCase()}</p>
-                                    {entry.txHash && <p>{entry.txHash.slice(0, 10)}...</p>}
+                                <div className="text-right">
+                                    <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(entry.status)}`}>
+                                        {entry.status?.toUpperCase() || 'UNKNOWN'}
+                                    </span>
+                                    {entry.txHash && (
+                                        <p className="text-[var(--muted)] mt-1">{entry.txHash.slice(0, 10)}...</p>
+                                    )}
+                                    <p className="text-[var(--muted)] mt-1">
+                                        {new Date(entry.timestamp).toLocaleTimeString()}
+                                    </p>
                                 </div>
                             </div>
                         ))}
