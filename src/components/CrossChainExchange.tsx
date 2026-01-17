@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract } from '@wagmi/core';
 import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
 import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche } from 'viem/chains';
-import { wagmiConfig, allChains } from '@/lib/wagmi';
+import { wagmiConfig } from '@/lib/wagmi';
 import { parseUnits } from 'viem';
 
 // HyperEVM chain definition
@@ -179,49 +179,6 @@ createConfig({
     ],
 });
 
-
-interface ChainData {
-    key: string;
-    name: string;
-    id: number;
-    chainType: string;
-    logoURI?: string;
-}
-
-interface ChainButtonProps {
-    chain: { id: number; name: string };
-    logoURI?: string;
-    chainIcon: string;
-    onClick: () => void;
-}
-
-function ChainButton({ chain, logoURI, chainIcon, onClick }: ChainButtonProps) {
-    const [imageError, setImageError] = useState(false);
-    
-    return (
-        <button
-            onClick={onClick}
-            className="card py-4 text-center hover:border-[var(--primary)] transition-all flex flex-col items-center gap-2"
-        >
-            {logoURI && !imageError ? (
-                <img
-                    src={logoURI}
-                    alt={chain.name}
-                    className="w-12 h-12 object-contain flex-shrink-0"
-                    style={{ imageRendering: 'auto' }}
-                    onError={(e) => {
-                        console.error(`[ChainButton] Failed to load image for ${chain.name}: ${logoURI}`);
-                        setImageError(true);
-                    }}
-                />
-            ) : (
-                <div className="text-2xl mb-2">{chainIcon}</div>
-            )}
-            <div className="font-semibold">{chain.name}</div>
-        </button>
-    );
-}
-
 interface CrossChainExchangeProps {
     onClose?: () => void;
 }
@@ -229,9 +186,6 @@ interface CrossChainExchangeProps {
 export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const { isConnected, address, chain } = useAccount();
     const [selectedChain, setSelectedChain] = useState<number | null>(null);
-    const [chainLogos, setChainLogos] = useState<Record<number, string>>({});
-    const [allChainsData, setAllChainsData] = useState<ChainData[]>([]);
-    const [isLoadingChains, setIsLoadingChains] = useState(true);
     const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
     const [amount, setAmount] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -243,82 +197,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [showDepositAfterBridge, setShowDepositAfterBridge] = useState(false); // Show deposit option after bridge
     const [progressStep, setProgressStep] = useState<number>(0); // 0 = not started, 1, 2, 3 = steps
     const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
-    const [showDepositDropdown, setShowDepositDropdown] = useState(false); // Deposit dropdown visibility
-
-    // Fetch chain data from LiFi API via our API route
-    useEffect(() => {
-        const fetchChains = async () => {
-            try {
-                const response = await fetch('/api/chains');
-                
-                if (!response.ok) {
-                    throw new Error('Failed to fetch chains');
-                }
-                
-                const data = await response.json();
-                const logos: Record<number, string> = {};
-                const chainsData: ChainData[] = [];
-                
-                console.log('[Chains] API Response received:', data);
-                
-                // Extract all chains and logos
-                if (data.chains && Array.isArray(data.chains)) {
-                    console.log(`[Chains] Processing ${data.chains.length} chains from API`);
-                    
-                    data.chains.forEach((chain: ChainData) => {
-                        // Store all chain data
-                        chainsData.push({
-                            key: chain.key,
-                            name: chain.name,
-                            id: chain.id,
-                            chainType: chain.chainType || 'EVM',
-                            logoURI: chain.logoURI,
-                        });
-                        
-                        // Store logos for supported chains
-                        if (SUPPORTED_CHAINS.some((c) => c.id === chain.id) && chain.logoURI) {
-                            logos[chain.id] = chain.logoURI;
-                            console.log(`[Chains] ✅ Found logo for chain ${chain.id} (${chain.name}):`, {
-                                chainId: chain.id,
-                                chainName: chain.name,
-                                chainType: chain.chainType || 'EVM',
-                                logoURI: chain.logoURI,
-                                logoImage: chain.logoURI // Log the image URL for inspector
-                            });
-                        }
-                    });
-                }
-                
-                console.log('[Chains] 📦 Final logos object:', logos);
-                console.log('[Chains] 🔗 Logo URIs by chain ID:', Object.entries(logos).map(([id, uri]) => ({
-                    chainId: parseInt(id),
-                    logoURI: uri
-                })));
-                console.log('[Chains] 📋 All chains by type:', {
-                    EVM: chainsData.filter(c => c.chainType === 'EVM').length,
-                    SVM: chainsData.filter(c => c.chainType === 'SVM').length,
-                    MVM: chainsData.filter(c => c.chainType === 'MVM').length,
-                });
-                console.log('[Chains] 📋 Supported chains:', SUPPORTED_CHAINS.map(c => ({ id: c.id, name: c.name })));
-                setAllChainsData(chainsData);
-                setChainLogos(logos);
-            } catch (error) {
-                console.error('[Chains] Failed to fetch chain data:', error);
-                // Continue without logos if fetch fails
-            } finally {
-                setIsLoadingChains(false);
-            }
-        };
-        
-        fetchChains();
-    }, []);
-
-    // Filter to only show EVM chains from the API data
-    const evmChains = allChainsData
-        .filter((chain) => chain.chainType === 'EVM')
-        .filter((chain) => SUPPORTED_CHAINS.some((c) => c.id === chain.id))
-        .map((chain) => SUPPORTED_CHAINS.find((c) => c.id === chain.id)!)
-        .filter(Boolean);
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
@@ -421,36 +299,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             const currentChainId = chain?.id;
             if (currentChainId !== HYPEREVM.chainId) {
                 console.log(`[Deposit] Switching to HyperEVM network...`);
-                try {
-                    // Get the HyperEVM chain from wagmi config
-                    const hyperEvmChain = allChains.find((c) => c.id === HYPEREVM.chainId);
-                    if (!hyperEvmChain) {
-                        throw new Error('HyperEVM chain not found in wagmi configuration');
-                    }
-                    
-                    // Verify chain exists in config before switching
-                    const targetChain = allChains.find((c) => c.id === HYPEREVM.chainId);
-                    if (!targetChain) {
-                        throw new Error(`Chain ${HYPEREVM.chainId} (HyperEVM) not found in wagmi configuration`);
-                    }
-                    
-                    await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId as any });
-                    
-                    // Wait for chain switch to complete and verify
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    
-                    // Get wallet client with the new chain to verify switch completed
-                    const walletClient = await getWalletClient(wagmiConfig, { chainId: HYPEREVM.chainId });
-                    if (!walletClient) {
-                        throw new Error('Failed to get wallet client for HyperEVM after chain switch. Please ensure you have switched to HyperEVM in your wallet.');
-                    }
-                    
-                    console.log(`[Deposit] Successfully switched to HyperEVM network (Chain ID: ${HYPEREVM.chainId})`);
-                } catch (switchError: any) {
-                    console.error(`[Deposit] Failed to switch chain:`, switchError);
-                    // If switch fails, throw error so user knows they need to switch manually
-                    throw new Error('Failed to switch to HyperEVM network. Please switch manually in your wallet.');
-                }
+                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
             }
 
             // Convert amount to token units
@@ -625,6 +474,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 options: {
                     slippage: 0.03, // 3% slippage tolerance
                     order: 'RECOMMENDED',
+                    allowBridges: ['stargate', 'hop', 'across', 'anyswap', 'multichain'],
+                    // Disable bundling to avoid bundle ID errors
+                    allowSwitchChain: true,
                 },
             });
 
@@ -869,38 +721,18 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 {step === 'chain' && (
                     <>
                         <p className="text-[var(--muted)] text-sm">Select your origin chain</p>
-                        {isLoadingChains ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                {SUPPORTED_CHAINS.map((chain) => (
-                                    <div
-                                        key={chain.id}
-                                        className="card py-4 text-center"
-                                    >
-                                        <div className="animate-pulse bg-[var(--card-border)] w-12 h-12 rounded-full mx-auto mb-2"></div>
-                                        <div className="h-4 bg-[var(--card-border)] rounded w-3/4 mx-auto"></div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : evmChains.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                {evmChains.map((chain) => {
-                                    const logoURI = chainLogos[chain.id];
-                                    return (
-                                        <ChainButton
-                                            key={chain.id}
-                                            chain={chain}
-                                            logoURI={logoURI}
-                                            chainIcon={CHAIN_ICONS[chain.id] || '?'}
-                                            onClick={() => handleChainSelect(chain.id)}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="card py-8 text-center">
-                                <p className="text-[var(--muted)]">Loading EVM chains...</p>
-                            </div>
-                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                            {SUPPORTED_CHAINS.map((chain) => (
+                                <button
+                                    key={chain.id}
+                                    onClick={() => handleChainSelect(chain.id)}
+                                    className="card py-4 text-center hover:border-[var(--primary)] transition-all"
+                                >
+                                    <div className="text-2xl mb-2">{CHAIN_ICONS[chain.id]}</div>
+                                    <div className="font-semibold">{chain.name}</div>
+                                </button>
+                            ))}
+                        </div>
                     </>
                 )}
 
