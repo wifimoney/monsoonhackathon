@@ -153,12 +153,27 @@ createConfig({
     integrator: 'Monsoon',
     providers: [
         EVM({
-            getWalletClient: () => getWalletClient(wagmiConfig),
+            getWalletClient: async () => {
+                const walletClient = await getWalletClient(wagmiConfig);
+                if (!walletClient) {
+                    throw new Error('Wallet client not available. Please connect your wallet.');
+                }
+                return walletClient;
+            },
             switchChain: async (chainId) => {
                 console.log(`[LiFi] Switching chain to ${chainId}...`);
-                const chain = await switchChain(wagmiConfig, { chainId } as any);
-                console.log(`[LiFi] Chain switched to ${chain.name} (${chain.id})`);
-                return getWalletClient(wagmiConfig, { chainId: chain.id });
+                try {
+                    await switchChain(wagmiConfig, { chainId } as any);
+                    const walletClient = await getWalletClient(wagmiConfig, { chainId });
+                    if (!walletClient) {
+                        throw new Error('Failed to get wallet client after chain switch');
+                    }
+                    console.log(`[LiFi] Chain switched to ${chainId}`);
+                    return walletClient;
+                } catch (error) {
+                    console.error(`[LiFi] Failed to switch chain:`, error);
+                    throw error;
+                }
             },
         }),
     ],
@@ -206,6 +221,12 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     };
 
     const handleBack = () => {
+        // If transaction is complete (success or error), reset the form instead of going back
+        if (txStatus === 'success' || txStatus === 'error') {
+            resetForm();
+            return;
+        }
+        
         if (step === 'asset') {
             setStep('chain');
             setSelectedChain(null);
@@ -229,11 +250,11 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         }
     };
 
-    const handleDeposit = async (bridgedAmountOverride?: string) => {
-        // Use override amount if provided (for post-bridge deposits), otherwise use current amount
-        const depositAmount = bridgedAmountOverride || amount;
-        const depositChain = selectedChain;
-        const depositAsset = selectedAsset;
+    const handleDeposit = async (depositAmountOverride?: string, depositChainOverride?: number, depositAssetOverride?: string) => {
+        // Use override values if provided (for post-bridge deposits), otherwise use current state
+        const depositAmount = depositAmountOverride || amount;
+        const depositChain = depositChainOverride || selectedChain;
+        const depositAsset = depositAssetOverride || selectedAsset;
         
         if (!depositChain || !depositAsset || !depositAmount || !address) return;
 
@@ -260,36 +281,36 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         }
 
         console.log('\n========== DEPOSIT TO HYPERLIQUID STARTED ==========');
-        console.log(`[Deposit] Amount: ${depositAmount} USDC on HyperEVM`);
+        console.log(`[Deposit] Amount: ${depositAmount} ${depositAsset} on HyperEVM`);
         console.log(`[Deposit] Account Address: ${address}`);
         console.log('===================================================\n');
 
         try {
-            // For post-bridge deposits, use HyperEVM USDC address
-            const assetAddress = (depositChain === HYPEREVM.chainId && depositAsset === 'USDC')
-                ? HYPEREVM.usdcAddress
-                : selectedAssetData?.address;
+            // Get asset data - use override if provided, otherwise use state
+            const assetData = depositAssetOverride && depositChainOverride
+                ? ASSETS[depositChainOverride]?.find((a) => a.symbol === depositAssetOverride)
+                : selectedAssetData;
             
-            if (!assetAddress) {
-                throw new Error('Asset address is not defined');
+            if (!assetData?.address) {
+                throw new Error('Selected asset address is not defined');
             }
 
             // Check if user is on HyperEVM network
             const currentChainId = chain?.id;
             if (currentChainId !== HYPEREVM.chainId) {
                 console.log(`[Deposit] Switching to HyperEVM network...`);
-                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId as any });
+                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
             }
 
-            // Convert amount to token units (USDC has 6 decimals)
-            const tokenAmount = parseTokenAmount(depositAmount, 6);
+            // Convert amount to token units
+            const tokenAmount = parseTokenAmount(depositAmount, assetData.decimals);
             const amountBigInt = BigInt(tokenAmount);
 
             console.log(`[Deposit] Preparing USDC deposit to Hyperliquid...`);
-            console.log(`[Deposit] Amount: ${depositAmount} USDC = ${tokenAmount} (6 decimals)`);
+            console.log(`[Deposit] Amount: ${depositAmount} USDC = ${tokenAmount} (${assetData.decimals} decimals)`);
 
             // Step 1: Approve USDC spending to CoreDepositWallet contract
-            const usdcAddress = assetAddress as `0x${string}`;
+            const usdcAddress = assetData.address as `0x${string}`;
             const coreDepositWallet = HYPEREVM.coreDepositWalletAddress;
 
             // Contract address is now configured
@@ -308,7 +329,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 abi: ERC20_ABI,
                 functionName: 'allowance',
                 args: [address as `0x${string}`, coreDepositWallet],
-                chainId: HYPEREVM.chainId as any,
+                chainId: HYPEREVM.chainId,
             });
 
             console.log(`[Deposit] Current allowance: ${currentAllowance.toString()}`);
@@ -322,7 +343,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     abi: ERC20_ABI,
                     functionName: 'approve',
                     args: [coreDepositWallet, amountBigInt],
-                    chainId: HYPEREVM.chainId as any,
+                    chainId: HYPEREVM.chainId,
                 });
 
                 console.log(`[Deposit] Approve transaction submitted: ${approveHash}`);
@@ -344,7 +365,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 abi: CORE_DEPOSIT_WALLET_ABI,
                 functionName: 'deposit',
                 args: [amountBigInt, destinationDexValue],
-                chainId: HYPEREVM.chainId as any,
+                chainId: HYPEREVM.chainId,
             });
 
             console.log(`[Deposit] Deposit transaction submitted: ${depositHash}`);
@@ -353,30 +374,29 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
             
             // Mark final step as complete
-            if (!isHyperEVMSelected) {
+            const isPostBridge = depositAmountOverride !== undefined;
+            if (isPostBridge) {
                 setProgressStep(3); // Step 3 complete (deposit after bridge)
             } else {
                 setProgressStep(1); // Step 1 complete (direct deposit)
             }
             
-            const finalAmount = bridgedAmountOverride || amount;
             console.log('\n========== DEPOSIT SUCCESSFUL ==========');
-            console.log(`[Deposit] ${finalAmount} USDC transferred from HyperEVM to HyperCore`);
+            console.log(`[Deposit] ${depositAmount} USDC transferred from HyperEVM to HyperCore`);
             console.log(`[Deposit] Funds are now available in your HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`);
             console.log(`[Deposit] Transaction: ${receipt.transactionHash}`);
             console.log('==========================================\n');
 
-            // Clear bridge state
+            // Clear bridge state if this was a post-bridge deposit
+            // Also set selectedChain to HyperEVM so success message shows correctly
+            if (isPostBridge) {
+                setSelectedChain(HYPEREVM.chainId);
+                setSelectedAsset('USDC');
+                setAmount(depositAmount);
+            }
             setBridgedAmount('');
             setShowDepositAfterBridge(false);
             setTxStatus('success');
-            
-            // Close the pane after successful deposit (show success briefly, then close)
-            setTimeout(() => {
-                if (onClose) {
-                    onClose();
-                }
-            }, 2000); // Show success for 2 seconds, then close
         } catch (error: any) {
             const errorMsg = error?.message || error?.toString() || '';
             const isUserRejection =
@@ -478,6 +498,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             // Execute the route using the configured wallet client
             console.log('\n[LiFi] Executing route...');
             const executedRoute = await executeRoute(route, {
+                // Disable bundling to avoid bundle ID errors
                 updateRouteHook(updatedRoute) {
                     const currentStep = updatedRoute.steps?.find(
                         (step) => step.execution?.status === 'PENDING' || step.execution?.status === 'ACTION_REQUIRED'
@@ -537,26 +558,24 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Store bridged amount
             setBridgedAmount(receivedAmountFormatted);
+
+            // Automatically trigger deposit to HyperCore after successful bridge
+            // Ensure progress steps are set up for the 3-step process
+            setProgressSteps([
+                `Sending ${amount} ${selectedAsset} on ${selectedChainData?.name}`,
+                `Receiving USDC on HyperEVM`,
+                `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+            ]);
+            setProgressStep(2); // Steps 1 and 2 are done, starting step 3
             
-            // Automatically proceed to deposit to HyperCore
-            console.log('[Auto-Deposit] Automatically depositing to HyperCore...');
-            console.log(`[Auto-Deposit] Destination: ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`);
+            // Automatically trigger deposit with the bridged amount
+            // Pass the bridged amount and HyperEVM config directly to handleDeposit
+            console.log('\n========== AUTO-DEPOSIT AFTER BRIDGE ==========');
+            console.log(`[Auto-Deposit] Starting automatic deposit of ${receivedAmountFormatted} USDC to HyperCore`);
+            console.log('================================================\n');
             
-            // Update progress to step 3
-            setProgressStep(3);
-            
-            // Automatically trigger deposit with bridged amount
-            // Use a small delay to ensure state is updated
-            setTimeout(async () => {
-                try {
-                    await handleDeposit(receivedAmountFormatted);
-                } catch (error) {
-                    console.error('[Auto-Deposit] Failed to auto-deposit:', error);
-                    // If auto-deposit fails, show the manual deposit option
-                    setShowDepositAfterBridge(true);
-                    setTxStatus('success');
-                }
-            }, 1000);
+            // Call handleDeposit with the bridged amount, overriding state values
+            await handleDeposit(receivedAmountFormatted, HYPEREVM.chainId, 'USDC');
         } catch (error: any) {
             // Check if user rejected the transaction
             const errorMsg = error?.message || error?.toString() || '';
@@ -658,7 +677,10 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 </div>
                 {onClose && (
                     <button
-                        onClick={onClose}
+                        onClick={() => {
+                            resetForm();
+                            onClose();
+                        }}
                         className="text-[var(--muted)] hover:text-[var(--foreground)]"
                     >
                         ✕
@@ -869,43 +891,43 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                         ) : (
                             // Exchange flow for other chains
                             <>
-                                <div className="card bg-black">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-sm text-[var(--muted)]">From</span>
-                                        <span className="text-sm text-[var(--muted)]">{selectedChainData?.name}</span>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <input
-                                            type="number"
-                                            value={amount}
-                                            onChange={(e) => setAmount(e.target.value)}
-                                            placeholder="0.0"
-                                            className="flex-1 bg-transparent text-2xl font-bold focus:outline-none"
-                                        />
-                                        <div className="px-3 py-2 rounded-lg bg-[var(--card)] font-semibold">
-                                            {selectedAsset}
-                                        </div>
-                                    </div>
+                        <div className="card bg-black">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm text-[var(--muted)]">From</span>
+                                <span className="text-sm text-[var(--muted)]">{selectedChainData?.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="number"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    placeholder="0.0"
+                                    className="flex-1 bg-transparent text-2xl font-bold focus:outline-none"
+                                />
+                                <div className="px-3 py-2 rounded-lg bg-[var(--card)] font-semibold">
+                                    {selectedAsset}
                                 </div>
+                            </div>
+                        </div>
 
-                                <div className="flex items-center justify-center text-2xl text-[var(--muted)]">
-                                    ↓
-                                </div>
+                        <div className="flex items-center justify-center text-2xl text-[var(--muted)]">
+                            ↓
+                        </div>
 
-                                <div className="card bg-black">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-sm text-[var(--muted)]">To</span>
-                                        <span className="text-sm text-[var(--muted)]">HyperEVM</span>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex-1 text-2xl font-bold text-[var(--muted)]">
-                                            {amount ? '~' + amount : '0.0'}
-                                        </div>
-                                        <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
-                                            USDC
-                                        </div>
-                                    </div>
+                        <div className="card bg-black">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm text-[var(--muted)]">To</span>
+                                <span className="text-sm text-[var(--muted)]">HyperEVM</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="flex-1 text-2xl font-bold text-[var(--muted)]">
+                                    {amount ? '~' + amount : '0.0'}
                                 </div>
+                                <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
+                                    USDC
+                                </div>
+                            </div>
+                        </div>
 
                                 {/* Destination Selection: Spot or Perps for cross-chain deposits */}
                                 <div className="card bg-black">
@@ -979,17 +1001,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                             {destinationDex === 'spot' 
                                                 ? ' After bridging, your USDC will be automatically deposited to your Spot account for spot trading.'
                                                 : ' After bridging, your USDC will be automatically deposited to your Perps account for perpetuals trading and used as margin.'}
-                                        </div>
-                                    </div>
                                 </div>
+                            </div>
+                        </div>
 
-                                <button
-                                    onClick={handleContinue}
-                                    disabled={!amount || parseFloat(amount) <= 0}
-                                    className="btn btn-primary w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    Continue
-                                </button>
+                        <button
+                            onClick={handleContinue}
+                            disabled={!amount || parseFloat(amount) <= 0}
+                            className="btn btn-primary w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Continue
+                        </button>
                             </>
                         )}
                     </>
@@ -1035,24 +1057,24 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                 </>
                             ) : (
                                 <>
-                                    <div className="card bg-black flex items-center justify-between">
-                                        <span className="text-[var(--muted)]">From</span>
-                                        <span className="font-semibold">{amount} {selectedAsset} on {selectedChainData?.name}</span>
-                                    </div>
-                                    <div className="card bg-black flex items-center justify-between">
+                            <div className="card bg-black flex items-center justify-between">
+                                <span className="text-[var(--muted)]">From</span>
+                                <span className="font-semibold">{amount} {selectedAsset} on {selectedChainData?.name}</span>
+                            </div>
+                            <div className="card bg-black flex items-center justify-between">
                                         <span className="text-[var(--muted)]">Bridge To</span>
-                                        <span className="font-semibold text-[var(--accent)]">~{amount} USDC on HyperEVM</span>
-                                    </div>
+                                <span className="font-semibold text-[var(--accent)]">~{amount} USDC on HyperEVM</span>
+                            </div>
                                     <div className="card bg-black flex items-center justify-between">
                                         <span className="text-[var(--muted)]">Final Destination</span>
                                         <span className="font-semibold">
                                             HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'} Account
                                         </span>
-                                    </div>
-                                    <div className="card bg-black flex items-center justify-between">
-                                        <span className="text-[var(--muted)]">Recipient</span>
-                                        <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
-                                    </div>
+                            </div>
+                            <div className="card bg-black flex items-center justify-between">
+                                <span className="text-[var(--muted)]">Recipient</span>
+                                <span className="font-mono text-sm">{address?.slice(0, 8)}...{address?.slice(-6)}</span>
+                            </div>
                                     <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-3">
                                         <div className="text-xs text-[var(--muted)]">
                                             <strong>Note:</strong> After bridging to HyperEVM, your USDC will be automatically deposited to your HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'} account.
@@ -1155,21 +1177,26 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4">✓</div>
                         <h4 className="text-lg font-bold text-[var(--accent)] mb-2">
-                            {progressSteps.length === 3 ? 'Transaction Complete!' : isHyperEVMSelected ? 'Deposit Successful!' : 'Bridge Successful!'}
+                            {/* Show "Deposit Successful!" if: 
+                                1. Direct deposit on HyperEVM (isHyperEVMSelected), OR
+                                2. Post-bridge deposit completed (progressSteps.length === 3 and progressStep === 3) */}
+                            {(isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)) 
+                                ? 'Deposit Successful!' 
+                                : 'Bridge Successful!'}
                         </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
-                            {progressSteps.length === 3
-                                ? `${bridgedAmount || amount} USDC bridged and deposited to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
-                                : isHyperEVMSelected
-                                ? `${amount} USDC transferred from HyperEVM to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+                            {(isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3))
+                                ? `${amount || bridgedAmount} USDC transferred from HyperEVM to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
                                 : `${bridgedAmount || amount} USDC is now on HyperEVM`}
                         </p>
-                        {/* Fallback: Show manual deposit option only if auto-deposit failed */}
-                        {!isHyperEVMSelected && showDepositAfterBridge && progressSteps.length < 3 && (
+                        {!isHyperEVMSelected && !(progressSteps.length === 3 && progressStep === 3) && showDepositAfterBridge && (
                             <div className="space-y-3">
                                 <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-4 mb-4">
-                                    <div className="text-sm text-[var(--muted)]">
-                                        Auto-deposit failed. Please try manually.
+                                    <div className="text-sm text-[var(--muted)] mb-2">
+                                        Your USDC is on HyperEVM. Ready to deposit to HyperCore.
+                                    </div>
+                                    <div className="text-xs text-[var(--muted)]">
+                                        Destination: <strong>{destinationDex === 'spot' ? 'Spot' : 'Perps'} Account</strong>
                                     </div>
                                 </div>
                                 <button 
@@ -1183,7 +1210,16 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                                 </button>
                             </div>
                         )}
-                        {/* Success screen will auto-close after 2 seconds for completed transactions */}
+                        {isHyperEVMSelected && (
+                            <button onClick={resetForm} className="btn btn-secondary">
+                                New Deposit
+                            </button>
+                        )}
+                        {!isHyperEVMSelected && !showDepositAfterBridge && (
+                        <button onClick={resetForm} className="btn btn-secondary">
+                            New Exchange
+                        </button>
+                        )}
                     </div>
                 )}
 
