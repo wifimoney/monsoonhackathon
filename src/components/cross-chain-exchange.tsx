@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAccount } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import {
@@ -153,12 +153,17 @@ const CORE_DEPOSIT_WALLET_ABI = [
   },
 ] as const
 
+// Get LiFi API key from environment
+const LIFI_API_KEY = process.env.NEXT_PUBLIC_X_LIFI_KEY || process.env.X_LIFI_KEY || ''
+const LIFI_API_BASE = 'https://li.quest/v1'
+
 // Configure LiFi SDK
 let lifiConfigured = false
 function configureLiFi() {
   if (lifiConfigured) return
   createLiFiConfig({
     integrator: "Monsoon",
+    apiKey: LIFI_API_KEY,
     providers: [
       EVM({
         getWalletClient: async () => {
@@ -176,6 +181,250 @@ function configureLiFi() {
     ],
   })
   lifiConfigured = true
+}
+
+// Map chain ID to chain key for LiFi API
+const CHAIN_ID_TO_KEY: Record<number, string> = {
+  1: 'eth',
+  42161: 'arb',
+  10: 'opt',
+  137: 'pol',
+  8453: 'bas',
+  56: 'bsc',
+  43114: 'ava',
+  999: '999', // HyperEVM - may need to check actual key
+}
+
+// Fetch token info from LiFi API tokens endpoint
+async function fetchTokens(chainIds?: number[]): Promise<Record<string, { logoURI?: string; symbol?: string; name?: string }>> {
+  if (!LIFI_API_KEY) {
+    console.warn('[LiFi] API key not configured, skipping token logo fetch')
+    return {}
+  }
+  
+  try {
+    // Convert chain IDs to chain keys
+    const chainKeys = chainIds && chainIds.length > 0 
+      ? chainIds.map(id => CHAIN_ID_TO_KEY[id] || id.toString()).join(',')
+      : ''
+    const chainsParam = chainKeys ? `&chains=${chainKeys}` : ''
+    const url = `${LIFI_API_BASE}/tokens?chainTypes=EVM&minPriceUSD=0${chainsParam}`
+    
+    console.log(`[LiFi] API Request:`)
+    console.log(`  Method: GET`)
+    console.log(`  URL: ${url}`)
+    if (chainIds && chainIds.length > 0) {
+      console.log(`  Chain IDs: ${chainIds.join(', ')}`)
+      console.log(`  Chain Keys: ${chainKeys}`)
+    }
+    
+    const response = await fetch(url, {
+      headers: {
+        'x-lifi-api-key': LIFI_API_KEY,
+      },
+    })
+    
+    console.log(`[LiFi] API Response: ${response.status} ${response.statusText}`)
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`[LiFi] Tokens API error: ${response.status} ${response.statusText}`)
+      console.error(`[LiFi] Error details:`, errorText)
+      return {}
+    }
+    
+    const data = await response.json()
+    console.log(`[LiFi] Response received: ${data.tokens?.length || 0} tokens`)
+    
+    // Transform token array into a map keyed by "chainId-tokenAddress"
+    const tokenMap: Record<string, { logoURI?: string; symbol?: string; name?: string }> = {}
+    
+    if (data.tokens && Array.isArray(data.tokens)) {
+      for (const token of data.tokens) {
+        if (token.chainId && token.address) {
+          const key = `${token.chainId}-${token.address.toLowerCase()}`
+          tokenMap[key] = {
+            logoURI: token.logoURI,
+            symbol: token.symbol,
+            name: token.name,
+          }
+        }
+      }
+      console.log(`[LiFi] Mapped ${Object.keys(tokenMap).length} tokens with logos`)
+    } else {
+      console.warn('[LiFi] API response does not contain tokens array:', data)
+    }
+    
+    return tokenMap
+  } catch (error) {
+    console.error(`[LiFi] Failed to fetch tokens:`, error)
+    return {}
+  }
+}
+
+// Fetch token logo URI for a specific token (backward compatibility)
+async function fetchTokenLogo(chainId: number, tokenAddress: string): Promise<string | null> {
+  const tokens = await fetchTokens([chainId])
+  const key = `${chainId}-${tokenAddress.toLowerCase()}`
+  return tokens[key]?.logoURI || null
+}
+
+// Fetch token price/info from LiFi token API
+interface TokenPriceInfo {
+  priceUSD?: number
+  decimals?: number
+  symbol?: string
+  name?: string
+}
+
+async function fetchTokenPrice(chainKey: string, tokenSymbol: string): Promise<TokenPriceInfo | null> {
+  if (!LIFI_API_KEY) {
+    console.warn(`[LiFi] API key not configured, skipping token price fetch for ${tokenSymbol} on ${chainKey}`)
+    return null
+  }
+  
+  try {
+    const url = `${LIFI_API_BASE}/token?chain=${chainKey}&token=${tokenSymbol}`
+    
+    console.log(`[LiFi] API Request:`)
+    console.log(`  Method: GET`)
+    console.log(`  URL: ${url}`)
+    console.log(`  Token: ${tokenSymbol} on chain ${chainKey}`)
+    
+    const response = await fetch(url, {
+      headers: {
+        'x-lifi-api-key': LIFI_API_KEY,
+      },
+    })
+    
+    console.log(`[LiFi] API Response: ${response.status} ${response.statusText}`)
+    
+    if (!response.ok) {
+      console.error(`[LiFi] Token API error for ${tokenSymbol} on ${chainKey}: ${response.status} ${response.statusText}`)
+      return null
+    }
+    
+    const data = await response.json()
+    console.log(`[LiFi] Token data received for ${tokenSymbol}:`, {
+      priceUSD: data.priceUSD,
+      decimals: data.decimals,
+      symbol: data.symbol,
+      name: data.name,
+    })
+    
+    return {
+      priceUSD: data.priceUSD,
+      decimals: data.decimals,
+      symbol: data.symbol,
+      name: data.name,
+    }
+  } catch (error) {
+    console.error(`[LiFi] Failed to fetch token price for ${tokenSymbol} on ${chainKey}:`, error)
+    return null
+  }
+}
+
+// Calculate expected USDC amount on HyperEVM based on token prices
+async function calculateExpectedUSDC(
+  fromChainId: number,
+  fromTokenSymbol: string,
+  amount: string
+): Promise<string | null> {
+  if (!amount || isNaN(Number.parseFloat(amount)) || Number.parseFloat(amount) <= 0) {
+    return null
+  }
+  
+  try {
+    const fromChainKey = CHAIN_ID_TO_KEY[fromChainId]
+    if (!fromChainKey) {
+      console.warn(`[USDC Calculation] Unknown chain ID: ${fromChainId}`)
+      return null
+    }
+    
+    // Fetch source token price
+    const sourceTokenInfo = await fetchTokenPrice(fromChainKey, fromTokenSymbol)
+    if (!sourceTokenInfo || !sourceTokenInfo.priceUSD) {
+      console.warn(`[USDC Calculation] Could not fetch price for ${fromTokenSymbol} on ${fromChainKey}`)
+      return null
+    }
+    
+    // Fetch USDC price on HyperEVM (should be ~1 USD)
+    const hyperEVMKey = CHAIN_ID_TO_KEY[hyperEVM.id] || '999'
+    const usdcInfo = await fetchTokenPrice(hyperEVMKey, 'USDC')
+    if (!usdcInfo || !usdcInfo.priceUSD) {
+      console.warn(`[USDC Calculation] Could not fetch USDC price on HyperEVM, assuming $1`)
+    }
+    
+    const usdcPriceUSD = usdcInfo?.priceUSD || 1
+    const sourceTokenPriceUSD = sourceTokenInfo.priceUSD
+    
+    // Calculate: (amount * sourceTokenPrice) / usdcPrice
+    const sourceAmount = Number.parseFloat(amount)
+    const expectedUSDC = (sourceAmount * sourceTokenPriceUSD) / usdcPriceUSD
+    
+    console.log(`[USDC Calculation] Calculated expected USDC:`)
+    console.log(`  Input: ${amount} ${fromTokenSymbol} on ${fromChainKey}`)
+    console.log(`  ${fromTokenSymbol} price: $${sourceTokenPriceUSD}`)
+    console.log(`  USDC price: $${usdcPriceUSD}`)
+    console.log(`  Expected USDC: ${expectedUSDC.toFixed(6)}`)
+    
+    return expectedUSDC.toFixed(6)
+  } catch (error) {
+    console.error(`[USDC Calculation] Error calculating USDC amount:`, error)
+    return null
+  }
+}
+
+// Fetch chain logo URI from LiFi API
+async function fetchChainLogo(chainId: number): Promise<string | null> {
+  if (!LIFI_API_KEY) {
+    console.warn(`[LiFi] API key not configured, skipping chain logo fetch for chain ${chainId}`)
+    return null
+  }
+  
+  try {
+    const chainKey = CHAIN_ID_TO_KEY[chainId] || chainId.toString()
+    const url = `${LIFI_API_BASE}/chains?chainTypes=EVM&chains=${chainKey}`
+    
+    console.log(`[LiFi] API Request:`)
+    console.log(`  Method: GET`)
+    console.log(`  URL: ${url}`)
+    console.log(`  Headers: { 'x-lifi-api-key': '***' (${LIFI_API_KEY ? 'configured' : 'missing'}) }`)
+    console.log(`  Target chain ID: ${chainId}, chain key: ${chainKey}`)
+    
+    const response = await fetch(url, {
+      headers: {
+        'x-lifi-api-key': LIFI_API_KEY,
+      },
+    })
+    
+    console.log(`[LiFi] API Response: ${response.status} ${response.statusText}`)
+    
+    if (!response.ok) {
+      console.error(`[LiFi] Chains API error for chain ${chainId}: ${response.status} ${response.statusText}`)
+      return null
+    }
+    
+    const data = await response.json()
+    console.log(`[LiFi] Response received: ${data.chains?.length || 0} chains`)
+    
+    // Try to find chain by id first, then by key
+    let chain = data.chains?.find((c: any) => c.id === chainId)
+    if (!chain) {
+      chain = data.chains?.find((c: any) => c.key === chainKey)
+    }
+    
+    if (chain?.logoURI) {
+      console.log(`[LiFi] Found chain logo for chain ${chainId} (key: ${chainKey}): ${chain.logoURI}`)
+      return chain.logoURI
+    } else {
+      console.warn(`[LiFi] No logo found for chain ${chainId} (key: ${chainKey})`)
+      return null
+    }
+  } catch (error) {
+    console.error(`[LiFi] Failed to fetch chain logo for chain ${chainId}:`, error)
+    return null
+  }
 }
 
 interface CrossChainExchangeProps {
@@ -196,21 +445,152 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
   const [showDepositAfterBridge, setShowDepositAfterBridge] = useState(false)
   const [progressStep, setProgressStep] = useState<number>(0)
   const [progressSteps, setProgressSteps] = useState<string[]>([])
+  const [chainLogos, setChainLogos] = useState<Record<number, string>>({})
+  const [tokenLogos, setTokenLogos] = useState<Record<string, string>>({})
+  const [expectedUSDC, setExpectedUSDC] = useState<string | null>(null)
+  const [isCalculatingUSDC, setIsCalculatingUSDC] = useState(false)
 
   const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : []
   const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain)
   const selectedAssetData = availableAssets.find((a) => a.symbol === selectedAsset)
   const isHyperEVMSelected = selectedChain === hyperEVM.id
 
+  // Fetch chain logos on mount
+  useEffect(() => {
+    console.log('[CrossChainExchange] useEffect: Fetching chain logos on mount')
+    console.log('[CrossChainExchange] Supported chains:', SUPPORTED_CHAINS.map(c => ({ id: c.id, name: c.name })))
+    
+    if (!LIFI_API_KEY) {
+      console.warn('[CrossChainExchange] LIFI_API_KEY not found, chain logos will not be fetched')
+      return
+    }
+    
+    const fetchChainLogos = async () => {
+      console.log('[CrossChainExchange] Starting chain logo fetch process...')
+      const logos: Record<number, string> = {}
+      
+      for (const chain of SUPPORTED_CHAINS) {
+        console.log(`[CrossChainExchange] Fetching logo for chain: ${chain.name} (ID: ${chain.id})`)
+        const logoURI = await fetchChainLogo(chain.id)
+        if (logoURI) {
+          logos[chain.id] = logoURI
+          console.log(`[CrossChainExchange] ✓ Chain logo found for ${chain.name}: ${logoURI}`)
+        } else {
+          console.log(`[CrossChainExchange] ✗ No chain logo found for ${chain.name}`)
+        }
+      }
+      
+      console.log(`[CrossChainExchange] Chain logos fetched: ${Object.keys(logos).length}/${SUPPORTED_CHAINS.length} chains have logos`)
+      setChainLogos(logos)
+      console.log('[CrossChainExchange] chainLogos state updated:', logos)
+    }
+    
+    fetchChainLogos()
+  }, [])
+
+  // Fetch token logos for all supported chains on mount
+  useEffect(() => {
+    console.log('[CrossChainExchange] useEffect: Fetching token logos on mount')
+    console.log('[CrossChainExchange] LIFI_API_KEY configured:', !!LIFI_API_KEY)
+    
+    if (!LIFI_API_KEY) {
+      console.warn('[CrossChainExchange] LIFI_API_KEY not found, token logos will not be fetched')
+      return
+    }
+    
+    const fetchAllTokenLogos = async () => {
+      console.log('[CrossChainExchange] Starting token logo fetch process...')
+      
+      // Get all unique chain IDs from ASSETS
+      const chainIds = Object.keys(ASSETS).map(Number)
+      console.log('[CrossChainExchange] Fetching tokens for chains:', chainIds)
+      
+      // Fetch all tokens for supported chains
+      console.log('[CrossChainExchange] Calling fetchTokens()...')
+      const tokenData = await fetchTokens(chainIds)
+      
+      console.log('[CrossChainExchange] fetchTokens() returned:', Object.keys(tokenData).length, 'tokens')
+      
+      // Update token logos state
+      if (Object.keys(tokenData).length > 0) {
+        const logos: Record<string, string> = {}
+        let logosWithURI = 0
+        
+        for (const [key, token] of Object.entries(tokenData)) {
+          if (token.logoURI) {
+            logos[key] = token.logoURI
+            logosWithURI++
+            console.log(`[CrossChainExchange] Token logo found: ${key} -> ${token.logoURI}`)
+          }
+        }
+        
+        console.log(`[CrossChainExchange] Found ${logosWithURI} tokens with logoURI out of ${Object.keys(tokenData).length} total tokens`)
+        console.log('[CrossChainExchange] Updating tokenLogos state with:', Object.keys(logos).length, 'logos')
+        
+        setTokenLogos((prev) => {
+          const updated = { ...prev, ...logos }
+          console.log('[CrossChainExchange] tokenLogos state updated. Total logos:', Object.keys(updated).length)
+          return updated
+        })
+      } else {
+        console.warn('[CrossChainExchange] No token data received from API')
+      }
+    }
+    
+    fetchAllTokenLogos()
+  }, [])
+
+  // Calculate expected USDC amount when chain, asset, or amount changes
+  useEffect(() => {
+    // Only calculate if not HyperEVM (HyperEVM deposits are direct USDC)
+    if (isHyperEVMSelected || !selectedChain || !selectedAsset || !amount || !LIFI_API_KEY) {
+      setExpectedUSDC(null)
+      return
+    }
+
+    const calculate = async () => {
+      setIsCalculatingUSDC(true)
+      try {
+        const calculated = await calculateExpectedUSDC(selectedChain, selectedAsset, amount)
+        setExpectedUSDC(calculated)
+      } catch (error) {
+        console.error('[CrossChainExchange] Error calculating USDC:', error)
+        setExpectedUSDC(null)
+      } finally {
+        setIsCalculatingUSDC(false)
+      }
+    }
+
+    // Debounce calculation slightly to avoid too many API calls
+    const timeoutId = setTimeout(calculate, 300)
+    return () => clearTimeout(timeoutId)
+  }, [selectedChain, selectedAsset, amount, isHyperEVMSelected])
+
   const handleChainSelect = (chainId: number) => {
-    setSelectedChain(chainId)
-    setSelectedAsset(null)
+    const chainData = SUPPORTED_CHAINS.find((c) => c.id === chainId)
+    const chainKey = CHAIN_ID_TO_KEY[chainId] || chainId.toString()
+    
+    console.log('========================================')
+    console.log('[Chain Selection] Chain selected')
+    console.log(`  Chain ID: ${chainId}`)
+    console.log(`  Chain Key: ${chainKey}`)
+    console.log(`  Chain Name: ${chainData?.name || 'Unknown'}`)
+    console.log(`  Chain Logo: ${chainLogos[chainId] ? 'Available' : 'Not found'}`)
+    
     if (chainId === hyperEVM.id) {
+      console.log(`  Action: HyperEVM selected - auto-selecting USDC and moving to amount step`)
+      setSelectedChain(chainId)
+      setSelectedAsset(null)
       setSelectedAsset("USDC")
       setStep("amount")
     } else {
+      console.log(`  Action: Moving to asset selection step`)
+      setSelectedChain(chainId)
+      setSelectedAsset(null)
       setStep("asset")
+      console.log(`  Available assets on ${chainData?.name}: ${(ASSETS[chainId] || []).map(a => a.symbol).join(', ')}`)
     }
+    console.log('========================================')
   }
 
   const handleAssetSelect = (symbol: string) => {
@@ -337,7 +717,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
           functionName: "approve",
           args: [CORE_DEPOSIT_WALLET, amountBigInt],
           chainId: hyperEVM.id,
-        })
+        } as any)
         await waitForTransactionReceipt(wagmiConfig, { hash: approveHash })
       }
 
@@ -350,7 +730,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         functionName: "deposit",
         args: [amountBigInt, destinationDexValue],
         chainId: hyperEVM.id,
-      })
+      } as any)
 
       await waitForTransactionReceipt(wagmiConfig, { hash: depositHash })
 
@@ -554,16 +934,34 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         <>
           <p className="text-gray-400 text-sm">Select your origin chain</p>
           <div className="grid grid-cols-2 gap-3">
-            {SUPPORTED_CHAINS.map((chain) => (
-              <button
-                key={chain.id}
-                onClick={() => handleChainSelect(chain.id)}
-                className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] text-center hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
-              >
-                <div className="text-2xl mb-2 font-bold text-primary">{CHAIN_ICONS[chain.id]}</div>
-                <div className="font-semibold text-sm text-white">{chain.name}</div>
-              </button>
-            ))}
+            {SUPPORTED_CHAINS.map((chain) => {
+              const chainLogo = chainLogos[chain.id]
+              return (
+                <button
+                  key={chain.id}
+                  onClick={() => handleChainSelect(chain.id)}
+                  className="p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] text-center hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
+                >
+                  {chainLogo ? (
+                    <img 
+                      src={chainLogo} 
+                      alt={chain.name}
+                      className="w-12 h-12 mx-auto mb-2 rounded-full object-contain"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const textEl = target.nextElementSibling as HTMLElement
+                        if (textEl) textEl.classList.remove('hidden')
+                      }}
+                    />
+                  ) : null}
+                  <div className={`text-2xl mb-2 font-bold text-primary ${chainLogo ? 'hidden' : ''}`}>
+                    {CHAIN_ICONS[chain.id]}
+                  </div>
+                  <div className="font-semibold text-sm text-white">{chain.name}</div>
+                </button>
+              )
+            })}
           </div>
         </>
       )}
@@ -573,21 +971,67 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         <>
           <p className="text-gray-400 text-sm">Select asset from {selectedChainData?.name}</p>
           <div className="space-y-2">
-            {availableAssets.map((asset) => (
-              <button
-                key={asset.symbol}
-                onClick={() => handleAssetSelect(asset.symbol)}
-                className="w-full p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] flex items-center gap-4 hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
-              >
-                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
-                  {asset.symbol.slice(0, 2)}
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold text-white">{asset.symbol}</div>
-                  <div className="text-sm text-gray-400">{asset.name}</div>
-                </div>
-              </button>
-            ))}
+            {availableAssets.map((asset) => {
+              const tokenLogoKey = selectedChain ? `${selectedChain}-${asset.address.toLowerCase()}` : ''
+              const tokenLogo = tokenLogoKey ? tokenLogos[tokenLogoKey] : null
+              
+              // Debug logging for token logo lookup
+              if (tokenLogoKey) {
+                console.log(`[CrossChainExchange] Rendering asset: ${asset.symbol}`)
+                console.log(`[CrossChainExchange] Looking for token logo with key: "${tokenLogoKey}"`)
+                console.log(`[CrossChainExchange] Asset address: ${asset.address} (normalized: ${asset.address.toLowerCase()})`)
+                console.log(`[CrossChainExchange] Token logo found:`, !!tokenLogo, tokenLogo ? `-> ${tokenLogo}` : 'NOT FOUND')
+                
+                // Check if there's a similar key (case mismatch, etc)
+                const similarKeys = Object.keys(tokenLogos).filter(key => 
+                  key.includes(asset.address.toLowerCase()) || 
+                  key.includes(asset.address.toLowerCase().slice(2)) // Check without 0x
+                )
+                if (similarKeys.length > 0 && !tokenLogo) {
+                  console.warn(`[CrossChainExchange] Found similar keys but not exact match:`, similarKeys)
+                }
+              }
+              
+              return (
+                <button
+                  key={asset.symbol}
+                  onClick={() => {
+                    console.log(`[CrossChainExchange] Asset clicked: ${asset.symbol} from chain ${selectedChain}`)
+                    console.log(`[CrossChainExchange] Token logo key: ${tokenLogoKey}`)
+                    console.log(`[CrossChainExchange] Token logo found:`, tokenLogo)
+                    handleAssetSelect(asset.symbol)
+                  }}
+                  className="w-full p-4 rounded-xl border border-[#1a1a2e] bg-[#12121a] flex items-center gap-4 hover:border-primary/60 hover:bg-[#1a1a28] transition-all duration-200"
+                >
+                  {tokenLogo ? (
+                    <img 
+                      src={tokenLogo} 
+                      alt={asset.symbol}
+                      className="w-10 h-10 rounded-full object-contain bg-transparent"
+                      onLoad={() => {
+                        console.log(`[CrossChainExchange] Token logo loaded successfully for ${asset.symbol}: ${tokenLogo}`)
+                      }}
+                      onError={(e) => {
+                        // Fallback to text if image fails to load
+                        console.error(`[CrossChainExchange] Token logo failed to load for ${asset.symbol}: ${tokenLogo}`)
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const textEl = target.nextElementSibling as HTMLElement
+                        if (textEl) textEl.classList.remove('hidden')
+                      }}
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
+                      {asset.symbol.slice(0, 2)}
+                    </div>
+                  )}
+                  <div className="text-left">
+                    <div className="font-semibold text-white">{asset.symbol}</div>
+                    <div className="text-sm text-gray-400">{asset.name}</div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </>
       )}
@@ -711,9 +1155,24 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                   <span className="text-sm text-gray-400">HyperEVM</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="flex-1 text-2xl font-bold text-gray-500">{amount ? "~" + amount : "0.0"}</div>
+                  <div className="flex-1 text-2xl font-bold text-primary">
+                    {isCalculatingUSDC ? (
+                      <span className="text-gray-400 text-lg">Calculating...</span>
+                    ) : expectedUSDC ? (
+                      `~${Number.parseFloat(expectedUSDC).toFixed(4)}`
+                    ) : amount ? (
+                      `~${amount}`
+                    ) : (
+                      "0.0"
+                    )}
+                  </div>
                   <div className="px-3 py-2 rounded-lg bg-primary/20 text-primary font-semibold">USDC</div>
                 </div>
+                {expectedUSDC && !isCalculatingUSDC && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    Expected amount based on current token prices
+                  </div>
+                )}
               </div>
 
               {/* Destination Selection for cross-chain */}
@@ -823,7 +1282,15 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 </div>
                 <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
                   <span className="text-muted-foreground">Bridge To</span>
-                  <span className="font-semibold text-primary">~{amount} USDC on HyperEVM</span>
+                  <span className="font-semibold text-primary">
+                    {isCalculatingUSDC ? (
+                      <span className="text-gray-400">Calculating...</span>
+                    ) : expectedUSDC ? (
+                      `~${Number.parseFloat(expectedUSDC).toFixed(4)} USDC on HyperEVM`
+                    ) : (
+                      `~${amount} USDC on HyperEVM`
+                    )}
+                  </span>
                 </div>
                 <div className="p-4 rounded-lg border border-border/40 bg-black flex items-center justify-between">
                   <span className="text-muted-foreground">Final Destination</span>
