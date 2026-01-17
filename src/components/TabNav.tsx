@@ -6,7 +6,11 @@ import { usePathname } from 'next/navigation';
 const tabs = [
     { name: 'Onboard', href: '/onboard' },
     { name: 'Trade', href: '/trade' },
+    { name: 'Vault', href: '/vault' },
+    { name: 'Orderbook', href: '/orderbook' },
+    { name: 'Pear', href: '/pear' },
     { name: 'Guardians', href: '/guardians' },
+    { name: 'Audit', href: '/audit' },
 ];
 
 export function TabNav() {

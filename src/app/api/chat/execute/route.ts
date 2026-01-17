@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSaltClient } from '@/salt/client';
 import { checkGuardrails, recordExecution } from '@/agent/guardrails';
 import { getMarketBySymbol } from '@/agent/market-data';
+import { recordAudit } from '@/audit/store';
 import type { ActionIntent, GuardrailsConfig } from '@/agent/types';
 
 export async function POST(request: NextRequest) {
@@ -25,6 +26,15 @@ export async function POST(request: NextRequest) {
 
         const guardrailsCheck = checkGuardrails(actionIntent, config);
         if (!guardrailsCheck.passed) {
+            recordAudit({
+                actionType: 'chat_trade',
+                status: 'denied',
+                market: actionIntent.market,
+                notionalUsd: actionIntent.notionalUsd,
+                reason: 'Blocked by local guardrails',
+                intent: actionIntent,
+                metadata: { issues: guardrailsCheck.issues },
+            });
             return NextResponse.json({
                 success: false,
                 stage: 'local_guardrails',
@@ -70,6 +80,17 @@ export async function POST(request: NextRequest) {
 
             // Check for policy denial
             if (result.policyBreach?.denied) {
+                recordAudit({
+                    actionType: 'chat_trade',
+                    status: 'denied',
+                    market: actionIntent.market,
+                    notionalUsd: actionIntent.notionalUsd,
+                    reason: result.policyBreach.reason,
+                    policies: (result.policyBreach as { rejectedPolicies?: Array<{ name: string }> })
+                        .rejectedPolicies
+                        ?.map((p) => p.name),
+                    intent: actionIntent,
+                });
                 return NextResponse.json({
                     success: false,
                     stage: 'salt_policy',
@@ -81,6 +102,14 @@ export async function POST(request: NextRequest) {
 
             // Record successful execution (for cooldown tracking)
             recordExecution();
+            recordAudit({
+                actionType: 'chat_trade',
+                status: 'confirmed',
+                market: actionIntent.market,
+                notionalUsd: actionIntent.notionalUsd,
+                txHash: result.txHash,
+                intent: actionIntent,
+            });
 
             return NextResponse.json({
                 success: true,
@@ -98,6 +127,15 @@ export async function POST(request: NextRequest) {
         } catch (error: any) {
             // Handle Salt policy denial thrown as exception
             if (error.rejectedPolicies || error.type === 'PolicyDenied') {
+                recordAudit({
+                    actionType: 'chat_trade',
+                    status: 'denied',
+                    market: actionIntent.market,
+                    notionalUsd: actionIntent.notionalUsd,
+                    reason: error.reason || error.message,
+                    policies: error.rejectedPolicies?.map((p: { name: string }) => p.name),
+                    intent: actionIntent,
+                });
                 return NextResponse.json({
                     success: false,
                     stage: 'salt_policy',
@@ -112,6 +150,14 @@ export async function POST(request: NextRequest) {
             }
 
             console.error('Execution error:', error);
+            recordAudit({
+                actionType: 'chat_trade',
+                status: 'failed',
+                market: actionIntent.market,
+                notionalUsd: actionIntent.notionalUsd,
+                reason: error.message || 'Execution failed',
+                intent: actionIntent,
+            });
             return NextResponse.json({
                 success: false,
                 stage: 'execution',

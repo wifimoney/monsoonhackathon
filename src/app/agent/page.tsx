@@ -10,6 +10,7 @@ import { PositionSizer } from '@/components/salt/PositionSizer';
 import { TransactionLifecycle, TransactionState } from '@/components/salt/TransactionLifecycle';
 import { BreachAnalytics } from '@/components/salt/BreachAnalytics';
 import { EmergencyStop } from '@/components/salt/EmergencyStop';
+import { StrategyConsole } from '@/components/salt/StrategyConsole';
 import type { ChatMessage, ActionIntent, MarketMatch, GuardrailsResult, GuardrailsConfig } from '@/agent/types';
 import type { AutonomyConfig } from '@/agent/autonomy';
 
@@ -282,6 +283,7 @@ export default function AgentPage() {
                             onSizeChange={setCurrentSize}
                         />
                         <TransactionLifecycle transaction={transaction} />
+                        <StrategyConsole />
                     </div>
 
                 </div>
