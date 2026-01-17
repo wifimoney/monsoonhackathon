@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const tabs = [
     { name: 'Onboard', href: '/onboard' },
     { name: 'Trade', href: '/trade' },
+    { name: 'Agent', href: '/agent' },
     { name: 'Vault', href: '/vault' },
     { name: 'Orderbook', href: '/orderbook' },
     { name: 'Pear', href: '/pear' },

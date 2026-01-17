@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { GuardianCard } from '@/components/guardians/GuardianCard';
 import { PresetSelector } from '@/components/guardians/PresetSelector';
 import { LossGuardianCard } from '@/components/guardians/LossGuardianCard';
+import { StrategyPresetCard } from '@/components/guardians/StrategyPresetCard';
 import type {
     GuardiansConfig,
     GuardianPreset,
     GuardianDenial,
+    StrategyPresetType,
 } from '@/guardians/types';
 import { GUARDIAN_PRESETS } from '@/guardians/types';
 
@@ -144,6 +146,14 @@ export default function GuardiansPage() {
 
             {/* Preset selector */}
             <PresetSelector preset={preset} onChange={handlePresetChange} />
+
+            {/* Strategy Presets */}
+            <div className="card">
+                <StrategyPresetCard
+                    currentPreset={preset}
+                    onPresetSelect={(strategy) => handlePresetChange(strategy as GuardianPreset)}
+                />
+            </div>
 
             {/* State counters */}
             {state && (
@@ -309,8 +319,8 @@ export default function GuardiansPage() {
                             <button
                                 onClick={handleTimeWindowToggle}
                                 className={`w-full text-xs py-1.5 rounded transition-colors ${config.timeWindow.simulateOutsideHours
-                                        ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-700'
-                                        : 'bg-black/30 text-[var(--muted)] border border-[var(--card-border)]'
+                                    ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-700'
+                                    : 'bg-black/30 text-[var(--muted)] border border-[var(--card-border)]'
                                     }`}
                             >
                                 {config.timeWindow.simulateOutsideHours ? '🌙 Simulating Outside Hours' : 'Simulate Outside Hours'}

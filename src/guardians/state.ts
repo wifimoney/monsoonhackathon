@@ -1,4 +1,4 @@
-import type { GuardiansState, GuardiansConfig } from './types';
+import type { GuardiansState, GuardiansConfig, GuardianPreset } from './types';
 import { GUARDIAN_PRESETS } from './types';
 
 // ============ STATE ============
@@ -83,7 +83,7 @@ export function setGuardiansConfig(newConfig: Partial<GuardiansConfig>): void {
     config = { ...config, ...newConfig };
 }
 
-export function applyPreset(preset: 'default' | 'conservative' | 'pro'): void {
+export function applyPreset(preset: GuardianPreset): void {
     config = { ...GUARDIAN_PRESETS[preset] };
 }
 
