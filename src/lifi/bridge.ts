@@ -1,122 +1,126 @@
-/**
- * LI.FI Bridge Integration
- * 
- * Bridges assets from any chain to HyperEVM.
- */
+// LI.FI Bridge Integration
+// Allows bridging assets from other chains to HyperEVM/Arbitrum Sepolia
 
-import { createConfig, getQuote, executeRoute, RouteExtended } from '@lifi/sdk';
+const LIFI_API = 'https://li.quest/v1';
 
-// Initialize LI.FI
-createConfig({
-    integrator: 'monsoon',
-});
-
-// ============ TYPES ============
-
-export interface BridgeParams {
+interface BridgeQuote {
+    id: string;
     fromChainId: number;
     toChainId: number;
     fromToken: string;
     toToken: string;
     fromAmount: string;
-    fromAddress: string;
-    toAddress: string;
+    toAmount: string;
+    estimatedGas: string;
+    tool: string;
 }
 
-export interface BridgeQuote {
-    route: RouteExtended;
-    estimatedOutput: string;
-    estimatedTime: number;
-    fees: string;
+interface BridgeRoute {
+    id: string;
+    steps: {
+        type: string;
+        action: {
+            fromChainId: number;
+            toChainId: number;
+            fromToken: { address: string; symbol: string };
+            toToken: { address: string; symbol: string };
+        };
+        estimate: {
+            fromAmount: string;
+            toAmount: string;
+        };
+    }[];
 }
 
-// ============ CONSTANTS ============
+export async function getQuote(
+    fromChainId: number,
+    toChainId: number,
+    fromToken: string,
+    toToken: string,
+    fromAmount: string,
+    fromAddress: string
+): Promise<BridgeQuote | null> {
+    try {
+        const params = new URLSearchParams({
+            fromChain: fromChainId.toString(),
+            toChain: toChainId.toString(),
+            fromToken,
+            toToken,
+            fromAmount,
+            fromAddress,
+        });
 
-export const SUPPORTED_CHAINS = {
-    ETHEREUM: 1,
-    ARBITRUM: 42161,
-    OPTIMISM: 10,
-    POLYGON: 137,
-    BASE: 8453,
-    HYPEREVM: 999,
-};
+        const response = await fetch(`${LIFI_API}/quote?${params}`);
+        if (!response.ok) {
+            console.error('LI.FI quote error:', await response.text());
+            return null;
+        }
 
-export const COMMON_TOKENS: Record<number, Record<string, string>> = {
-    [SUPPORTED_CHAINS.ETHEREUM]: {
+        return await response.json();
+    } catch (error) {
+        console.error('LI.FI quote failed:', error);
+        return null;
+    }
+}
+
+export async function getRoutes(
+    fromChainId: number,
+    toChainId: number,
+    fromToken: string,
+    toToken: string,
+    fromAmount: string,
+    fromAddress: string
+): Promise<BridgeRoute[]> {
+    try {
+        const response = await fetch(`${LIFI_API}/routes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fromChainId,
+                toChainId,
+                fromTokenAddress: fromToken,
+                toTokenAddress: toToken,
+                fromAmount,
+                fromAddress,
+                options: {
+                    slippage: 0.03, // 3% slippage
+                    order: 'RECOMMENDED',
+                },
+            }),
+        });
+
+        if (!response.ok) {
+            console.error('LI.FI routes error:', await response.text());
+            return [];
+        }
+
+        const data = await response.json();
+        return data.routes || [];
+    } catch (error) {
+        console.error('LI.FI routes failed:', error);
+        return [];
+    }
+}
+
+// Common token addresses
+export const COMMON_TOKENS = {
+    // Ethereum Mainnet
+    1: {
         USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
         WETH: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     },
-    [SUPPORTED_CHAINS.ARBITRUM]: {
+    // Arbitrum One
+    42161: {
         USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
         USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
         WETH: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
     },
-    [SUPPORTED_CHAINS.HYPEREVM]: {
-        WHYPE: '0x5555555555555555555555555555555555555555',
-        // Add USDC when available on HyperEVM
+    // Arbitrum Sepolia (mocks)
+    421614: {
+        mUSDC: '0xaa6a7b7faa7f28566fe5c3cfc628a1ee0583a0ba',
+        mWETH: '0xe4e118a0b252a631b19789d84f504b10167466e2',
     },
 };
 
-// ============ BRIDGE FUNCTIONS ============
-
-export async function getBridgeQuote(params: BridgeParams): Promise<BridgeQuote> {
-    const quote = await getQuote({
-        fromChain: params.fromChainId,
-        toChain: params.toChainId,
-        fromToken: params.fromToken,
-        toToken: params.toToken,
-        fromAmount: params.fromAmount,
-        fromAddress: params.fromAddress,
-        toAddress: params.toAddress,
-    });
-
-    return {
-        route: quote,
-        estimatedOutput: quote.estimate.toAmount,
-        estimatedTime: quote.estimate.executionDuration,
-        fees: quote.estimate.feeCosts?.reduce(
-            (acc, fee) => acc + parseFloat(fee.amountUSD || '0'),
-            0
-        ).toFixed(2) || '0',
-    };
-}
-
-export async function executeBridge(
-    route: RouteExtended,
-    signer: any // ethers Signer or viem WalletClient
-): Promise<{
-    txHash: string;
-    status: 'pending' | 'success' | 'failed';
-}> {
-    return new Promise((resolve, reject) => {
-        executeRoute(route, {
-            updateRouteHook: (updatedRoute) => {
-                const step = updatedRoute.steps[0];
-                if (step?.execution?.status === 'DONE') {
-                    resolve({
-                        txHash: step.execution.process[0]?.txHash || '',
-                        status: 'success',
-                    });
-                } else if (step?.execution?.status === 'FAILED') {
-                    reject(new Error('Bridge failed'));
-                }
-            },
-            // @ts-ignore - signer type mismatch
-            signer,
-        });
-    });
-}
-
-// ============ HELPER ============
-
-export function getEstimatedBridgeTime(fromChain: number, toChain: number): string {
-    // Rough estimates
-    if (fromChain === SUPPORTED_CHAINS.HYPEREVM || toChain === SUPPORTED_CHAINS.HYPEREVM) {
-        return '~5-10 minutes'; // HyperEVM bridging
-    }
-    if (fromChain === toChain) {
-        return '< 1 minute';
-    }
-    return '~2-5 minutes';
-}
+export const SUPPORTED_CHAINS = [1, 10, 137, 42161, 421614];

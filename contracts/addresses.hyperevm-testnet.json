@@ -1,0 +1,41 @@
+{
+    "network": "hyperevm-testnet",
+    "chainId": 998,
+    "rpcUrl": "https://rpc.hyperliquid-testnet.xyz/evm",
+    "blockExplorer": "https://explorer.hyperliquid-testnet.xyz",
+    "deployedAt": "2026-01-17",
+    "contracts": {
+        "MonsoonALM": "0x77259d96Ae1AA52C771AeC5452929C7877Ab8B43",
+        "HyperCoreQuoter": "0x382269E2a46c4f73e83a241C13C3f3346B91f50d",
+        "SovereignPool": "0xE30b0A0031De98534D0aD96c6A50007a1CC1dC98",
+        "MockFactory": "0xc24F38189F0e2cf70F4faD13A3037Ad9f595b038"
+    },
+    "hypercore": {
+        "precompileAddress": "0x0000000000000000000000000000000000000800",
+        "assetIndex": 0
+    },
+    "tokens": {
+        "TOKEN0": {
+            "address": "0x2f2Af7b5fA68329b4086b04bCf9dac9E8c9f3494",
+            "symbol": "mUSDC",
+            "decimals": 6,
+            "note": "Mock USDC deployed with contracts"
+        },
+        "TOKEN1": {
+            "address": "0x4aDEED7d8ACB3E86b54A78E51E61936165169fA6",
+            "symbol": "mWETH",
+            "decimals": 18,
+            "note": "Mock WETH deployed with contracts"
+        }
+    },
+    "roles": {
+        "deployer": "0x2688fEB26c243B56D1DD9Cc21D80fA669F5Fc280",
+        "strategist": "0x2688fEB26c243B56D1DD9Cc21D80fA669F5Fc280",
+        "priceUpdater": "0x2688fEB26c243B56D1DD9Cc21D80fA669F5Fc280",
+        "executor": "0x2688fEB26c243B56D1DD9Cc21D80fA669F5Fc280"
+    },
+    "txHashes": {
+        "token0": "0xa2ab4024957aa889f8bf5822298fc25cf238292ac14d2b868dd63267e084b36f",
+        "monsoonALM": "0x1e3fb01e2a433e9b14ec299cee63399885f7b37120d240ee7691d73e2a53e248"
+    }
+}

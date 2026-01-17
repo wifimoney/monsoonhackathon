@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useState } from "react"
+import { useAccount, useDisconnect } from "wagmi"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -12,7 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CreditCard, RefreshCw, Send } from "lucide-react"
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CreditCard, RefreshCw, Send, Wallet } from "lucide-react"
+import { ConnectWallet } from "./connect-wallet"
 
 const navItems = [
   { name: "Trade", href: "/dashboard/trade" },
@@ -36,11 +37,11 @@ const walletActions = [
 export function DashboardHeader() {
   const pathname = usePathname()
   const router = useRouter()
-  const [isConnected, setIsConnected] = useState(true)
-  const walletAddress = "0x7a16...3f9E"
+  const { address, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
 
   const handleDisconnect = () => {
-    setIsConnected(false)
+    disconnect()
     router.push("/")
   }
 
@@ -77,35 +78,40 @@ export function DashboardHeader() {
           ))}
         </nav>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="border-border/60 bg-black/50 hover:bg-white/5 font-mono text-sm gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-              </span>
-              {walletAddress}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 bg-black/95 border-border/60 backdrop-blur-xl">
-            {walletActions.map((action) => (
+        {/* Wallet Connection */}
+        {isConnected && address ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="border-border/60 bg-black/50 hover:bg-white/5 font-mono text-sm gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                </span>
+                {address.slice(0, 6)}...{address.slice(-4)}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 bg-black/95 border-border/60 backdrop-blur-xl">
+              {walletActions.map((action) => (
+                <DropdownMenuItem
+                  key={action.name}
+                  className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground focus:text-foreground focus:bg-white/5"
+                >
+                  <action.icon className="h-4 w-4" />
+                  <span className="font-medium tracking-tight">{action.name}</span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator className="bg-border/40" />
               <DropdownMenuItem
-                key={action.name}
-                className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground focus:text-foreground focus:bg-white/5"
+                onClick={handleDisconnect}
+                className="flex items-center gap-2 cursor-pointer text-red-400 hover:text-red-300 focus:text-red-300 focus:bg-red-500/10"
               >
-                <action.icon className="h-4 w-4" />
-                <span className="font-medium tracking-tight">{action.name}</span>
+                <span className="font-medium tracking-tight">Disconnect</span>
               </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator className="bg-border/40" />
-            <DropdownMenuItem
-              onClick={handleDisconnect}
-              className="flex items-center gap-2 cursor-pointer text-red-400 hover:text-red-300 focus:text-red-300 focus:bg-red-500/10"
-            >
-              <span className="font-medium tracking-tight">Disconnect</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <ConnectWallet />
+        )}
       </div>
     </header>
   )

@@ -1,207 +1,134 @@
+// Salt-Gated Actions
+// These functions wrap contract calls with Salt policy validation
+
+import { defaultValidator, PolicyValidationResult } from './policies';
+
+interface GatedActionResult {
+    success: boolean;
+    validationResult: PolicyValidationResult;
+    txHash?: string;
+    error?: string;
+}
+
 /**
- * Salt-Gated Actions for Monsoon
- * 
- * All sensitive operations go through these functions which:
- * 1. Validate against policies
- * 2. Get Salt wallet approval
- * 3. Have Robo Guardian co-sign
- * 4. Log to audit
+ * Salt-gated deposit function
+ * Validates deposit against policies before execution
  */
-
-import { encodeFunctionData, parseEther } from 'viem';
-import { PolicyValidator } from './policies';
-import { auditLog } from '../audit/logger';
-import { HYPEREVM, MONSOON_ALM_ABI } from '../lib/contracts';
-
-// Types
-interface SaltWallet {
-    address: string;
-    sendTransaction: (tx: { to: string; data: string; value?: bigint }) => Promise<string>;
-}
-
-interface RoboGuardian {
-    validateAndSign: (tx: any, context: any) => Promise<{ approved: boolean; signature?: string; reason?: string }>;
-}
-
-// ============ GATED DEPOSIT ============
-
 export async function gatedDeposit(
-    saltWallet: SaltWallet,
-    guardian: RoboGuardian,
-    validator: PolicyValidator,
-    params: {
-        amount0: bigint;
-        amount1: bigint;
-        token0Address: string;
-        token1Address: string;
-        recipient: string;
-    }
-): Promise<{ success: boolean; txHash?: string; error?: string }> {
-    const totalValue = params.amount0 + params.amount1;
-
-    // 1. Validate against policy
-    const validation0 = validator.validateDeposit(params.amount0, params.token0Address);
-    if (!validation0.valid) {
-        await auditLog({
-            action: 'DEPOSIT_BLOCKED',
-            reason: validation0.reason,
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-        });
-        return { success: false, error: validation0.reason };
-    }
-
-    const validation1 = validator.validateDeposit(params.amount1, params.token1Address);
-    if (!validation1.valid) {
-        await auditLog({
-            action: 'DEPOSIT_BLOCKED',
-            reason: validation1.reason,
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-        });
-        return { success: false, error: validation1.reason };
-    }
-
-    // 2. Prepare transaction
-    const txData = encodeFunctionData({
-        abi: MONSOON_ALM_ABI,
-        functionName: 'deposit',
-        args: [params.amount0, params.amount1, 0n, params.recipient],
-    });
-
-    const tx = {
-        to: HYPEREVM.MONSOON_ALM,
-        data: txData,
-    };
-
-    // 3. Get Robo Guardian approval
-    const guardianResult = await guardian.validateAndSign(tx, {
-        action: 'deposit',
-        amount0: params.amount0.toString(),
-        amount1: params.amount1.toString(),
-    });
-
-    if (!guardianResult.approved) {
-        await auditLog({
-            action: 'DEPOSIT_GUARDIAN_REJECTED',
-            reason: guardianResult.reason,
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-        });
-        return { success: false, error: `Guardian rejected: ${guardianResult.reason}` };
-    }
-
-    // 4. Send via Salt wallet
-    try {
-        const txHash = await saltWallet.sendTransaction(tx);
-
-        // Record in policy tracker
-        validator.recordDeposit(totalValue);
-
-        await auditLog({
-            action: 'DEPOSIT_SUCCESS',
-            txHash,
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-            recipient: params.recipient,
-        });
-
-        return { success: true, txHash };
-    } catch (error) {
-        await auditLog({
-            action: 'DEPOSIT_FAILED',
-            error: String(error),
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-        });
-        return { success: false, error: String(error) };
-    }
-}
-
-// ============ GATED REBALANCE ============
-
-export async function gatedAllocateToOB(
-    saltWallet: SaltWallet,
-    guardian: RoboGuardian,
-    validator: PolicyValidator,
-    params: {
-        amount0: bigint;
-        amount1: bigint;
-        isBid: boolean;
-        currentOBPct: number;
-        currentAMMPct: number;
-    }
-): Promise<{ success: boolean; txHash?: string; error?: string }> {
-    // Calculate proposed OB percentage
-    // This is simplified - in production, calculate from actual reserves
-    const proposedOBPct = params.currentOBPct + 5; // Assume 5% increase
-
-    // 1. Validate against policy
-    const validation = validator.validateRebalance(
-        params.currentOBPct,
-        proposedOBPct,
-        params.currentAMMPct
-    );
+    amount: bigint,
+    token: string,
+    executeDeposit: () => Promise<string>
+): Promise<GatedActionResult> {
+    // Step 1: Validate against policy
+    const validation = defaultValidator.validateDeposit(amount, token);
 
     if (!validation.valid) {
-        await auditLog({
-            action: 'REBALANCE_BLOCKED',
-            reason: validation.reason,
-            isBid: params.isBid,
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-        });
-        return { success: false, error: validation.reason };
+        console.log('[Salt] Deposit blocked:', validation.reason);
+        return {
+            success: false,
+            validationResult: validation,
+            error: validation.reason,
+        };
     }
 
-    // 2. Prepare transaction
-    const txData = encodeFunctionData({
-        abi: MONSOON_ALM_ABI,
-        functionName: 'allocateToOB',
-        args: [params.amount0, params.amount1, params.isBid],
-    });
-
-    const tx = {
-        to: HYPEREVM.MONSOON_ALM,
-        data: txData,
-    };
-
-    // 3. Get Robo Guardian approval
-    const guardianResult = await guardian.validateAndSign(tx, {
-        action: 'allocateToOB',
-        isBid: params.isBid,
-        amount0: params.amount0.toString(),
-        amount1: params.amount1.toString(),
-    });
-
-    if (!guardianResult.approved) {
-        await auditLog({
-            action: 'REBALANCE_GUARDIAN_REJECTED',
-            reason: guardianResult.reason,
-        });
-        return { success: false, error: `Guardian rejected: ${guardianResult.reason}` };
-    }
-
-    // 4. Send via Salt wallet
+    // Step 2: Execute deposit
     try {
-        const txHash = await saltWallet.sendTransaction(tx);
+        console.log('[Salt] Deposit approved, executing...');
+        const txHash = await executeDeposit();
+        console.log('[Salt] Deposit complete:', txHash);
 
-        validator.recordRebalance();
-
-        await auditLog({
-            action: 'REBALANCE_SUCCESS',
+        return {
+            success: true,
+            validationResult: validation,
             txHash,
-            isBid: params.isBid,
-            amount0: params.amount0.toString(),
-            amount1: params.amount1.toString(),
-        });
-
-        return { success: true, txHash };
+        };
     } catch (error) {
-        await auditLog({
-            action: 'REBALANCE_FAILED',
-            error: String(error),
-        });
-        return { success: false, error: String(error) };
+        return {
+            success: false,
+            validationResult: validation,
+            error: error instanceof Error ? error.message : 'Unknown error',
+        };
+    }
+}
+
+/**
+ * Salt-gated rebalance function
+ * Validates rebalance against policies before execution
+ */
+export async function gatedRebalance(
+    allocationPercent: number,
+    lastRebalanceTime: number,
+    executeRebalance: () => Promise<string>
+): Promise<GatedActionResult> {
+    // Step 1: Validate against policy
+    const validation = defaultValidator.validateRebalance(allocationPercent, lastRebalanceTime);
+
+    if (!validation.valid) {
+        console.log('[Salt] Rebalance blocked:', validation.reason);
+        return {
+            success: false,
+            validationResult: validation,
+            error: validation.reason,
+        };
+    }
+
+    // Step 2: Execute rebalance
+    try {
+        console.log('[Salt] Rebalance approved, executing...');
+        const txHash = await executeRebalance();
+        console.log('[Salt] Rebalance complete:', txHash);
+
+        return {
+            success: true,
+            validationResult: validation,
+            txHash,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            validationResult: validation,
+            error: error instanceof Error ? error.message : 'Unknown error',
+        };
+    }
+}
+
+/**
+ * Salt-gated OB order placement
+ */
+export async function gatedOBOrder(
+    spreadBps: number,
+    orderSizePercent: number,
+    assetIndex: number,
+    executeOrder: () => Promise<string>
+): Promise<GatedActionResult> {
+    // Step 1: Validate against policy
+    const validation = defaultValidator.validateOBOrder(spreadBps, orderSizePercent, assetIndex);
+
+    if (!validation.valid) {
+        console.log('[Salt] OB Order blocked:', validation.reason);
+        return {
+            success: false,
+            validationResult: validation,
+            error: validation.reason,
+        };
+    }
+
+    // Step 2: Execute order
+    try {
+        console.log('[Salt] OB Order approved, executing...');
+        const txHash = await executeOrder();
+        console.log('[Salt] OB Order complete:', txHash);
+
+        return {
+            success: true,
+            validationResult: validation,
+            txHash,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            validationResult: validation,
+            error: error instanceof Error ? error.message : 'Unknown error',
+        };
     }
 }

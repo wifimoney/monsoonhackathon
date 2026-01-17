@@ -1,99 +1,62 @@
-# Monsoon - Policy-Controlled Trading Agent
+# Monsoon - HyperEVM Liquidity Management Protocol
 
-**AI-powered trading with Salt policy enforcement for HyperEVM.**
+**Salt-gated liquidity management with HyperCore orderbook integration.**
 
-Monsoon is a next-generation trading platform that combines LLM-powered intent classification with deterministic market matching and Salt's policy enforcement layer. Users describe trades in natural language, and the system handles everything from market selection to guardrail checks to tamper-resistant execution.
+Monsoon is a next-generation DeFi protocol that combines Valantis Sovereign Pools as the AMM base layer with HyperCore's native orderbook for price discovery. Users can deposit liquidity, and strategists can allocate portions to the HyperCore orderbook—all protected by Salt policy enforcement.
 
 ---
 
 ## 🎯 Core Concept
 
 ```
-Natural Language → LLM Intent → Market Matching → Guardrails → Salt Enforcement → Execution
+Deposit → AMM Pool ← HyperCore Price → OB Allocation → Execution
+            ↓                              ↓
+       Salt Policies              Off-Chain Executor
 ```
 
-**Example:**
-```
-User: "I want safe exposure to gold, around $200"
-  ↓
-LLM: { assetClass: "commodity", preference: "safe_haven", size: 200 }
-  ↓
-Matcher: GOLD (score: 0.92), SILVER (0.71)
-  ↓
-Guardrails: ✅ Passed (within limits)
-  ↓
-Salt: ✅ Approved (policy compliant)
-  ↓
-Execution: BUY GOLD/USDH $200
-```
+**Key Innovation:** Zero-oracle pricing using HyperCore's native precompile, with Salt-gated actions for institutional-grade security.
 
 ---
 
 ## 🏗️ Architecture
 
-### 1. **Agent Layer** (`src/agent/`)
-Handles natural language processing and trade intent classification.
+### 1. **Smart Contracts** (`contracts/`)
+Core on-chain infrastructure deployed on Arbitrum Sepolia (testnet).
 
-- **`intent-classifier.ts`** - LLM-powered intent extraction via OpenRouter (Claude 3.5 Sonnet)
-- **`token-matcher.ts`** - Deterministic market scoring (relevance + liquidity + risk)
-- **`action-builder.ts`** - Converts matched markets into executable actions
-- **`market-data.ts`** - Static market data (GOLD, OIL, SILVER, BTC, ETH)
-- **`response-generator.ts`** - LLM-generated natural language responses
+| Contract | Address | Description |
+|----------|---------|-------------|
+| MonsoonALM | `0x63825fb627b0e85b2f70a3b42fe530c7e6d72498` | Main liquidity module |
+| HyperCoreQuoter | `0x37f4e2a0a4a59f2a0405c4e539a39d90cf355d84` | Price oracle from HyperCore |
+| SovereignPool | `0x82b785a3ab55772c88381c4387083399422cdfcd` | Valantis AMM pool |
+| Token0 (mUSDC) | `0xaa6a7b7faa7f28566fe5c3cfc628a1ee0583a0ba` | Mock USDC |
+| Token1 (mWETH) | `0xe4e118a0b252a631b19789d84f504b10167466e2` | Mock WETH |
 
-### 2. **Robo Guardians Layer** (`src/guardians/`)
-Local risk engine with 7 guardian types protecting your automation.
+### 2. **Frontend** (`src/`)
+Next.js 16 application with wagmi wallet integration.
 
-| Guardian | Enforces | Salt Native? |
-|----------|----------|--------------|
-| 💰 **Spend** | Max $250/trade, $1000/day | ✅ Yes |
-| 📊 **Leverage** | Max 3x leverage | ❌ Local |
-| 🎯 **Exposure** | Max $500 per asset | ❌ Local |
-| 🏛️ **Venue** | Allowlisted contracts only | ✅ Yes |
-| ⏱️ **Rate** | 10 trades/day, 60s cooldown | ❌ Local |
-| 🕐 **Time Window** | 09:00-17:00 UTC | ❌ Local |
-| 🛑 **Loss** | Drawdown kill switch | ❌ Local |
+| Page | Route | Features |
+|------|-------|----------|
+| Landing | `/` | Animated shader background |
+| Trade | `/dashboard/trade` | Swap interface |
+| Vault | `/dashboard/vault` | **Live deposit/withdraw with contract hooks** |
+| Agent | `/dashboard/agent` | AI chat interface |
+| Orderbook | `/dashboard/orderbook` | Order book viewer |
+| Pear | `/dashboard/pear` | Pair trading |
+| Guardians | `/dashboard/guardians` | Salt policy toggles |
+| Audit | `/dashboard/audit` | Transaction history |
 
-**Files:**
-- **`types.ts`** - Guardian configs, presets, strategy configs
-- **`state.ts`** - Persistent state (daily spend, trade count, positions)
-- **`risk-engine.ts`** - Central check function for all guardians
+### 3. **Off-Chain Services** (`src/executor/`, `src/lifi/`)
+Background services for orderbook execution and cross-chain bridging.
 
-### 3. **Salt Integration** (`src/salt/`)
-Tamper-resistant policy enforcement layer.
+- **OB Executor** - Listens for `AllocateToOB` events and places orders on HyperLiquid
+- **LI.FI Bridge** - Cross-chain deposits from Ethereum, Arbitrum, etc.
 
-- **`client.ts`** - SaltClient wrapper with authenticate, transfer, submitTx
-- **`config.ts`** - Salt providers and signer for server-side use
-- **`chains.ts`** - Chain configuration (HyperEVM, Arbitrum Sepolia, Base Sepolia)
-- **`types.ts`** - PolicyBreach, Guardrails, TransferResult types
+### 4. **Salt Integration** (`src/salt/`)
+Policy enforcement layer with gated actions.
 
-### 4. **Strategy Presets** (`src/guardians/types.ts`)
-Pre-configured "Robo Manager" strategies for specific use cases:
-
-| Preset | Purpose | Key Policies |
-|--------|---------|--------------|
-| 📊 **Basis/Funding Arb** | Funding/basis arbitrage | Min funding rate, max exposure |
-| ⚖️ **Auto-Hedge Delta** | Delta-neutral hedging | Delta threshold, max hedge size |
-| 🕐 **Market Hours Mode** | Time-restricted trading | 9-17 UTC, weekend lock |
-| 🛑 **Drawdown Stop** | Circuit breaker | Max drawdown, account pause |
-
-### 5. **Human-in-the-Loop Approvals** (`src/approvals/`)
-Explicit approval flow for agent automation.
-
-- **`types.ts`** - PendingAction, ActionType, ApprovalStatus
-- **`store.ts`** - Propose/approve/reject logic
-- **API**: `/api/approvals` - List & propose, `/api/approvals/[id]` - Approve/reject
-
-**Flow:**
-```
-1️⃣ Agent proposes action → 2️⃣ Policy check → 3️⃣ Human approves → 4️⃣ Salt executes
-```
-
-### 6. **Audit Trail** (`src/audit/`)
-SQLite-backed audit logging for all actions.
-
-- **`db.ts`** - SQLite database with WAL mode
-- **`store.ts`** - CRUD operations, filtering, stats, CSV export
-- **`types.ts`** - AuditRecord, AuditFilter, AuditStats
+- **Deposit Policy** - Max amounts, allowed tokens
+- **Rebalance Policy** - Max allocation %, cooldowns
+- **OB Order Policy** - Max spread, order size limits
 
 ---
 
@@ -101,41 +64,30 @@ SQLite-backed audit logging for all actions.
 
 ```
 monsoonhackathon/
+├── contracts/                    # Foundry smart contracts
+│   ├── src/
+│   │   ├── MonsoonALM.sol       # Core liquidity module
+│   │   ├── HyperCoreQuoter.sol  # Price oracle
+│   │   └── interfaces/          # Contract interfaces
+│   ├── script/
+│   │   ├── Deploy.s.sol         # Production deployment
+│   │   └── DeployMocks.s.sol    # Testnet deployment
+│   └── test/                     # Foundry tests
+│
 ├── src/
-│   ├── agent/                    # Trading agent core
-│   ├── guardians/                # Local risk engine (Robo Guardians)
-│   ├── salt/                     # Salt SDK integration
-│   ├── approvals/                # Human-in-the-loop approval system
-│   ├── audit/                    # Audit trail (SQLite)
-│   ├── openrouter/               # LLM client
-│   │
-│   ├── components/
-│   │   ├── chat/                 # Chat trader UI
-│   │   ├── guardians/            # Guardian configuration + Strategy presets
-│   │   ├── approvals/            # Pending actions queue, action cards
-│   │   ├── audit/                # Audit table, filters, stats, detail view
-│   │   ├── salt/                 # Salt UI (Simulators, Lifecycle)
-│   │   └── TabNav.tsx            # Main navigation
-│   │
-│   ├── app/
-│   │   ├── (tabs)/               # Main app pages
-│   │   │   ├── onboard/          # Onboarding & Connection
-│   │   │   ├── trade/            # Chat Trading Interface
-│   │   │   ├── agent/            # Robo Manager (Human-in-the-Loop)
-│   │   │   ├── guardians/        # Guardian Configuration + Strategies
-│   │   │   └── audit/            # Audit Log & Receipts
-│   │   │
-│   │   └── api/                  # API Routes
-│   │       ├── chat/             # Intent & Execution
-│   │       ├── guardians/        # Config, State, Strategy eligibility
-│   │       ├── approvals/        # Pending actions CRUD
-│   │       ├── audit/            # Audit records, stats, export
-│   │       └── salt/             # Simulation & Status
-│   │
-├── data/                         # SQLite database (gitignored)
-├── scripts/
-│   ├── check-salt-connection.ts  # Verify SDK auth
-│   └── test-guardrails-trades.ts # Full system test suite
+│   ├── app/                      # Next.js app router
+│   │   ├── dashboard/            # Dashboard pages
+│   │   └── api/                  # API routes
+│   ├── components/               # React components
+│   ├── lib/
+│   │   ├── contracts/            # ABIs, addresses, wagmi hooks
+│   │   └── wagmi.tsx             # Web3Provider
+│   ├── salt/                     # Policy validation
+│   ├── lifi/                     # Bridge integration
+│   ├── executor/                 # OB executor service
+│   └── audit/                    # Audit logging
+│
+└── DEPLOYMENT.md                 # Deployment notes
 ```
 
 ---
@@ -144,9 +96,8 @@ monsoonhackathon/
 
 ### Prerequisites
 - Node.js 18+
-- Salt account (for policy enforcement)
-- OpenRouter API key (for LLM)
-- Ethereum Wallet (MetaMask, Rabby, etc.)
+- Foundry (for contracts)
+- MetaMask or compatible wallet
 
 ### Installation
 
@@ -158,31 +109,11 @@ cd monsoonhackathon
 # Install dependencies
 npm install
 
-# Set up environment variables
-cp .env.example .env.local
+# Install Foundry dependencies
+cd contracts && forge install
 ```
 
-### Environment Variables
-
-```bash
-# Data & Network
-PRIVATE_KEY=your_private_key
-ORCHESTRATION_NETWORK_RPC_NODE_URL=https://sepolia-rollup.arbitrum.io/rpc
-BROADCASTING_NETWORK_RPC_NODE_URL=https://sepolia-rollup.arbitrum.io/rpc
-BROADCASTING_NETWORK_ID=421614
-AGENT="SOMNIA"
-
-# Salt Account
-ALLOWED_RECIPIENT=0x...
-SALT_ORG_ID=your_org_id
-SALT_ACCOUNT_ID=your_account_id
-
-# LLM
-OPENROUTER_API_KEY=your_key
-OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
-```
-
-### Run Development Server
+### Running the Frontend
 
 ```bash
 npm run dev
@@ -190,127 +121,80 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
----
-
-## 📱 User Interface
-
-### 1. **Trade Page** (`/trade`)
-**"Talk to your portfolio."**
-- Chat interface for natural language trading
-- Real-time intent classification
-- Market matching with confidence scores
-- Instant guardrail feedback
-
-### 2. **Agent Page** (`/agent`) 🆕
-**"Human-in-the-loop automation."**
-- **Robo Manager Actions**: Auto-hedge, Deploy Liquidity, Rebalance, Basket Trade
-- **Pending Queue**: Actions awaiting approval with countdown timers
-- **Approve/Reject**: One-click decisions with policy check status
-- **Recent Decisions**: History of approved/rejected actions
-
-### 3. **Guardians Page** (`/guardians`)
-**"Configure your safety net."**
-- **Presets**: One-click switch between Conservative/Default/Pro
-- **Strategy Presets**: Basis Arb, Auto-Hedge, Market Hours, Drawdown Stop
-- **Live Counters**: Track remaining daily budget and trades
-- **Toggles**: Enable/disable individual guardians
-- **Test Mode**: Simulate denials and strategy eligibility
-
-### 4. **Audit Page** (`/audit`) 🆕
-**"Complete transaction history."**
-- **Stats Dashboard**: Total actions, success rate, denials, volume
-- **Filterable Table**: By status, action type, category, time range
-- **Detail View**: Full audit record with policy denials
-- **CSV Export**: Download for offline analysis
-- **Auto-Refresh**: Real-time updates
-
-### 5. **Onboard Page** (`/onboard`)
-**"Connect and verify."**
-- Wallet connection (Injected/MetaMask)
-- Salt account status
-- System health checks
-
----
-
-## 🧪 Testing & Verification
-
-We include comprehensive test scripts to verify the entire stack.
-
-### 1. Run the Full Test Suite
-Tests connectivity, all 7 guardians, and trade simulation flows.
+### Running the Executor
 
 ```bash
-# Use your local env vars
-export $(grep -v '^#' .env.local | xargs) && npx tsx scripts/test-guardrails-trades.ts
+export EXECUTOR_PRIVATE_KEY="your_private_key"
+npx tsx src/executor/index.ts
 ```
 
-**What it tests:**
-- ✅ Salt SDK Authentication
-- ✅ Spend Limit enforcement
-- ✅ Leverage Limit enforcement
-- ✅ Rate Limit cooldowns
-- ✅ Time Window restrictions
-- ✅ Loss Guardian kill switch
-- ✅ Full trade lifecycle (Pre-flight → Execute → Record)
+### Deploying Contracts
 
-### 2. Check Salt Connectivity Only
 ```bash
-export $(grep -v '^#' .env.local | xargs) && npx tsx scripts/check-salt-connection.ts
+cd contracts
+
+# Set environment
+cp .env.example .env
+# Edit .env with your private key
+
+# Deploy to Arbitrum Sepolia
+forge script script/DeployMocks.s.sol --tc DeployMocksAndMonsoon \
+  --rpc-url https://sepolia-rollup.arbitrum.io/rpc --broadcast
 ```
-
-### 3. Test Strategy Presets
-```bash
-# Test Basis Arb eligibility
-curl "http://localhost:3000/api/guardians/strategy?strategy=basisArb"
-
-# Test Market Hours (blocked on weekends)
-curl "http://localhost:3000/api/guardians/strategy?strategy=marketHours"
-
-# Simulate failure
-curl "http://localhost:3000/api/guardians/strategy?strategy=basisArb&fail=true"
-```
-
-### 4. Test Approvals Flow
-```bash
-# Create demo pending actions
-curl -X POST "http://localhost:3000/api/approvals" -d '{"demo": true}'
-
-# List pending actions
-curl "http://localhost:3000/api/approvals"
-
-# Approve an action
-curl -X POST "http://localhost:3000/api/approvals/ACTION_ID" -d '{"action": "approve"}'
-```
-
-### 5. Manual UI Testing
-1. Go to **/guardians** → Scroll to Strategy Presets → Click "Test"
-2. Go to **/agent** → Click "Create Demo Pending Actions" → Approve/Reject
-3. Go to **/audit** → View logged actions and filter
 
 ---
 
 ## 🔐 Security Model
 
-### Local Guardrails vs. Salt Policies
+### Salt Policy Layers
 
-| Feature | Local Guardrails | Salt Policies |
-|---------|------------------|---------------|
-| **Enforcement** | Client/Server code | On-chain / MPC |
-| **Logic** | Context-aware (Time, PnL) | Deterministic (Allowlist, Limits) |
-| **Flexibility** | High (Change in UI) | Low (Requires signing) |
-| **Purpose** | Operational safety | Catastrophic loss prevention |
+| Layer | Enforcement | Purpose |
+|-------|-------------|---------|
+| **Deposit Policy** | Max per-tx, daily limits | Prevent oversized deposits |
+| **Rebalance Policy** | Max allocation %, cooldowns | Prevent aggressive OB exposure |
+| **OB Order Policy** | Spread limits, size caps | Prevent market manipulation |
 
-**Best Practice:** Use Local Guardrails for day-to-day risk management and Salt Policies for hard limits that must never be breached.
+### Gated Actions
+All sensitive operations go through Salt validation:
+
+```typescript
+const result = await gatedDeposit(amount, token, executeDeposit);
+if (!result.success) {
+  console.log('Blocked:', result.validationResult.reason);
+}
+```
 
 ---
 
-## 🆕 New Features Summary
+## 🧪 Testing
 
-| Feature | Tab | Description |
-|---------|-----|-------------|
-| **Strategy Presets** | `/guardians` | 4 pre-configured trading strategies with eligibility checks |
-| **Human-in-the-Loop** | `/agent` | Propose → Approve → Execute flow for automation |
-| **Audit Trail** | `/audit` | SQLite-backed logging with filtering and export |
+### Smart Contract Tests
+```bash
+cd contracts
+forge test -vvv
+```
+
+### Frontend
+```bash
+npm run dev
+# Navigate to http://localhost:3000/dashboard/vault
+# Connect wallet and interact
+```
+
+---
+
+## 📊 Key Features
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| ✅ Valantis Integration | Complete | Sovereign Pool as AMM base |
+| ✅ HyperCore Pricing | Complete | Zero-oracle via precompile |
+| ✅ Wagmi Wallet | Complete | Real wallet connection |
+| ✅ Live Vault Page | Complete | Contract reads/writes |
+| ✅ Salt Policies | Complete | Gated deposit/rebalance |
+| ✅ OB Executor | Complete | Event-driven order placement |
+| ✅ LI.FI Bridge | Complete | Cross-chain deposits |
+| ✅ Audit Trail | Complete | Action logging |
 
 ---
 

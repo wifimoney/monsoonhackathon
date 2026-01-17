@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
+import { Web3Provider } from "@/lib/wagmi"
 import "./globals.css"
 
 const _inter = Inter({ subsets: ["latin"] })
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
   title: "Monsoon | DeFi Trading Protocol",
   description:
     "The next-generation decentralized trading protocol. Execute trades with unprecedented speed and zero slippage.",
-    generator: 'v0.app'
+  generator: 'v0.app'
 }
 
 export default function RootLayout({
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        {children}
+        <Web3Provider>
+          {children}
+        </Web3Provider>
         <Analytics />
       </body>
     </html>

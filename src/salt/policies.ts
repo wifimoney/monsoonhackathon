@@ -1,160 +1,155 @@
-/**
- * Salt Policy Definitions for Monsoon
- * 
- * These policies are enforced by Robo Guardians before any transaction is broadcast.
- */
-
-export interface MonsoonPolicy {
-    deposit: DepositPolicy;
-    rebalance: RebalancePolicy;
-    obOrder: OBOrderPolicy;
-}
+// Salt Policy Types and Validation
 
 export interface DepositPolicy {
-    maxAmountPerTx: bigint;      // Max single deposit
-    dailyLimit: bigint;           // Max daily deposits
-    allowedTokens: string[];      // Whitelisted token addresses
-    requiresConfirmation: boolean; // Require user confirmation
+    maxAmountPerTx: bigint;       // Max single deposit
+    maxDailyAmount: bigint;        // Max daily deposit volume
+    allowedTokens: string[];       // Whitelist of token addresses
+    requireGuardianApproval: boolean;
 }
 
 export interface RebalancePolicy {
-    maxOBAllocationPct: number;   // Max % of reserves to OB (e.g., 30)
-    minAMMReservePct: number;     // Min % to keep in AMM (e.g., 50)
-    cooldownSeconds: number;      // Min time between rebalances
-    maxDailyRebalances: number;   // Max rebalances per day
+    maxAllocationPercent: number;  // Max % of reserves to allocate to OB (e.g., 30)
+    minTimeBetweenRebalances: number; // Seconds between rebalances
+    requireGuardianApproval: boolean;
 }
 
 export interface OBOrderPolicy {
-    maxOrderSize: bigint;         // Max single order
-    maxSpreadBps: number;         // Max distance from mid
-    allowedAssets: string[];      // Whitelisted assets
-    maxOpenOrders: number;        // Max concurrent orders
+    maxSpreadBps: number;          // Max spread in basis points
+    maxOrderSizePercent: number;   // Max order size as % of allocation
+    allowedAssets: number[];       // HyperCore asset indices
 }
 
-// ============ DEFAULT POLICIES ============
-
-export const DEFAULT_MONSOON_POLICY: MonsoonPolicy = {
-    deposit: {
-        maxAmountPerTx: BigInt(10_000e18),      // $10k max per deposit
-        dailyLimit: BigInt(50_000e18),           // $50k daily limit
-        allowedTokens: [],                       // Set at runtime
-        requiresConfirmation: true,
-    },
-    rebalance: {
-        maxOBAllocationPct: 30,                  // Max 30% to orderbook
-        minAMMReservePct: 50,                    // Keep 50% in AMM
-        cooldownSeconds: 3600,                   // 1 hour cooldown
-        maxDailyRebalances: 10,                  // Max 10 rebalances/day
-    },
-    obOrder: {
-        maxOrderSize: BigInt(5_000e18),          // $5k max per order
-        maxSpreadBps: 100,                       // Max 1% from mid
-        allowedAssets: ['HYPE'],                 // Only HYPE for now
-        maxOpenOrders: 4,                        // Max 4 open orders
-    },
-};
-
-// ============ POLICY VALIDATOR ============
+export interface PolicyValidationResult {
+    valid: boolean;
+    reason?: string;
+    policyId?: string;
+}
 
 export class PolicyValidator {
-    private policy: MonsoonPolicy;
-    private dailyDeposits: bigint = 0n;
-    private dailyRebalances: number = 0;
-    private lastRebalanceTime: number = 0;
-    private lastResetDay: number = 0;
+    private depositPolicy: DepositPolicy;
+    private rebalancePolicy: RebalancePolicy;
+    private obOrderPolicy: OBOrderPolicy;
 
-    constructor(policy: MonsoonPolicy = DEFAULT_MONSOON_POLICY) {
-        this.policy = policy;
+    constructor(
+        depositPolicy: DepositPolicy,
+        rebalancePolicy: RebalancePolicy,
+        obOrderPolicy: OBOrderPolicy
+    ) {
+        this.depositPolicy = depositPolicy;
+        this.rebalancePolicy = rebalancePolicy;
+        this.obOrderPolicy = obOrderPolicy;
     }
 
-    resetDailyCounters() {
-        const today = Math.floor(Date.now() / 86400000);
-        if (today !== this.lastResetDay) {
-            this.dailyDeposits = 0n;
-            this.dailyRebalances = 0;
-            this.lastResetDay = today;
-        }
-    }
-
-    validateDeposit(amount: bigint, tokenAddress: string): { valid: boolean; reason?: string } {
-        this.resetDailyCounters();
-
-        if (amount > this.policy.deposit.maxAmountPerTx) {
-            return { valid: false, reason: `Amount exceeds max per tx (${this.policy.deposit.maxAmountPerTx})` };
+    validateDeposit(amount: bigint, token: string): PolicyValidationResult {
+        // Check max amount
+        if (amount > this.depositPolicy.maxAmountPerTx) {
+            return {
+                valid: false,
+                reason: `Amount exceeds max per transaction (${this.depositPolicy.maxAmountPerTx})`,
+                policyId: 'deposit.maxAmountPerTx',
+            };
         }
 
-        if (this.dailyDeposits + amount > this.policy.deposit.dailyLimit) {
-            return { valid: false, reason: `Would exceed daily limit` };
-        }
-
-        if (this.policy.deposit.allowedTokens.length > 0 &&
-            !this.policy.deposit.allowedTokens.includes(tokenAddress.toLowerCase())) {
-            return { valid: false, reason: `Token not whitelisted` };
+        // Check allowed tokens
+        if (!this.depositPolicy.allowedTokens.includes(token.toLowerCase())) {
+            return {
+                valid: false,
+                reason: `Token ${token} not in allowed list`,
+                policyId: 'deposit.allowedTokens',
+            };
         }
 
         return { valid: true };
     }
 
     validateRebalance(
-        currentOBPct: number,
-        proposedOBPct: number,
-        currentAMMPct: number
-    ): { valid: boolean; reason?: string } {
-        this.resetDailyCounters();
-
-        const now = Date.now() / 1000;
-        if (now - this.lastRebalanceTime < this.policy.rebalance.cooldownSeconds) {
-            const remaining = this.policy.rebalance.cooldownSeconds - (now - this.lastRebalanceTime);
-            return { valid: false, reason: `Cooldown active (${Math.ceil(remaining)}s remaining)` };
+        allocationPercent: number,
+        lastRebalanceTime: number
+    ): PolicyValidationResult {
+        // Check allocation percent
+        if (allocationPercent > this.rebalancePolicy.maxAllocationPercent) {
+            return {
+                valid: false,
+                reason: `Allocation ${allocationPercent}% exceeds max ${this.rebalancePolicy.maxAllocationPercent}%`,
+                policyId: 'rebalance.maxAllocationPercent',
+            };
         }
 
-        if (this.dailyRebalances >= this.policy.rebalance.maxDailyRebalances) {
-            return { valid: false, reason: `Daily rebalance limit reached` };
-        }
-
-        if (proposedOBPct > this.policy.rebalance.maxOBAllocationPct) {
-            return { valid: false, reason: `OB allocation exceeds max (${this.policy.rebalance.maxOBAllocationPct}%)` };
-        }
-
-        const resultingAMMPct = 100 - proposedOBPct;
-        if (resultingAMMPct < this.policy.rebalance.minAMMReservePct) {
-            return { valid: false, reason: `AMM reserve would fall below min (${this.policy.rebalance.minAMMReservePct}%)` };
+        // Check time since last rebalance
+        const timeSince = Date.now() / 1000 - lastRebalanceTime;
+        if (timeSince < this.rebalancePolicy.minTimeBetweenRebalances) {
+            return {
+                valid: false,
+                reason: `Must wait ${this.rebalancePolicy.minTimeBetweenRebalances - timeSince}s before next rebalance`,
+                policyId: 'rebalance.minTimeBetweenRebalances',
+            };
         }
 
         return { valid: true };
     }
 
     validateOBOrder(
-        asset: string,
-        size: bigint,
         spreadBps: number,
-        currentOpenOrders: number
-    ): { valid: boolean; reason?: string } {
-        if (!this.policy.obOrder.allowedAssets.includes(asset)) {
-            return { valid: false, reason: `Asset not allowed` };
+        orderSizePercent: number,
+        assetIndex: number
+    ): PolicyValidationResult {
+        // Check spread
+        if (spreadBps > this.obOrderPolicy.maxSpreadBps) {
+            return {
+                valid: false,
+                reason: `Spread ${spreadBps}bps exceeds max ${this.obOrderPolicy.maxSpreadBps}bps`,
+                policyId: 'obOrder.maxSpreadBps',
+            };
         }
 
-        if (size > this.policy.obOrder.maxOrderSize) {
-            return { valid: false, reason: `Order size exceeds max` };
+        // Check order size
+        if (orderSizePercent > this.obOrderPolicy.maxOrderSizePercent) {
+            return {
+                valid: false,
+                reason: `Order size ${orderSizePercent}% exceeds max ${this.obOrderPolicy.maxOrderSizePercent}%`,
+                policyId: 'obOrder.maxOrderSizePercent',
+            };
         }
 
-        if (spreadBps > this.policy.obOrder.maxSpreadBps) {
-            return { valid: false, reason: `Spread exceeds max (${this.policy.obOrder.maxSpreadBps} bps)` };
-        }
-
-        if (currentOpenOrders >= this.policy.obOrder.maxOpenOrders) {
-            return { valid: false, reason: `Max open orders reached` };
+        // Check asset allowed
+        if (!this.obOrderPolicy.allowedAssets.includes(assetIndex)) {
+            return {
+                valid: false,
+                reason: `Asset index ${assetIndex} not allowed`,
+                policyId: 'obOrder.allowedAssets',
+            };
         }
 
         return { valid: true };
     }
-
-    recordDeposit(amount: bigint) {
-        this.dailyDeposits += amount;
-    }
-
-    recordRebalance() {
-        this.dailyRebalances++;
-        this.lastRebalanceTime = Date.now() / 1000;
-    }
 }
+
+// Default policies for Monsoon
+export const DEFAULT_DEPOSIT_POLICY: DepositPolicy = {
+    maxAmountPerTx: BigInt(100000) * BigInt(10 ** 6), // 100k USDC
+    maxDailyAmount: BigInt(1000000) * BigInt(10 ** 6), // 1M USDC daily
+    allowedTokens: [
+        '0xaa6a7b7faa7f28566fe5c3cfc628a1ee0583a0ba', // mUSDC
+        '0xe4e118a0b252a631b19789d84f504b10167466e2', // mWETH
+    ],
+    requireGuardianApproval: false,
+};
+
+export const DEFAULT_REBALANCE_POLICY: RebalancePolicy = {
+    maxAllocationPercent: 30,      // Max 30% to OB
+    minTimeBetweenRebalances: 300, // 5 minutes
+    requireGuardianApproval: true,
+};
+
+export const DEFAULT_OB_ORDER_POLICY: OBOrderPolicy = {
+    maxSpreadBps: 50,              // 0.5% max spread
+    maxOrderSizePercent: 20,       // 20% of allocation per order
+    allowedAssets: [0],            // Only HYPE for now
+};
+
+// Create default validator
+export const defaultValidator = new PolicyValidator(
+    DEFAULT_DEPOSIT_POLICY,
+    DEFAULT_REBALANCE_POLICY,
+    DEFAULT_OB_ORDER_POLICY
+);
