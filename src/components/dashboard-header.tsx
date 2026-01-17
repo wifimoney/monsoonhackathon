@@ -1,5 +1,7 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAccount, useDisconnect } from "wagmi"
@@ -14,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CreditCard, RefreshCw, Send, Wallet } from "lucide-react"
 import { ConnectWallet } from "./connect-wallet"
+import { CrossChainExchange } from "./cross-chain-exchange"
 
 const navItems = [
   { name: "Trade", href: "/dashboard/trade" },
@@ -39,10 +42,25 @@ export function DashboardHeader() {
   const router = useRouter()
   const { address, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
+  const [showCrossChainModal, setShowCrossChainModal] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Ensure component is mounted for portal
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleDisconnect = () => {
     disconnect()
     router.push("/")
+  }
+
+  const handleWalletAction = (actionName: string) => {
+    if (actionName === "Deposit" || actionName === "Bridge") {
+      console.log(`[DashboardHeader] ${actionName} clicked, opening modal`)
+      setShowCrossChainModal(true)
+    }
+    // Add other action handlers here as needed
   }
 
   return (
@@ -94,6 +112,7 @@ export function DashboardHeader() {
               {walletActions.map((action) => (
                 <DropdownMenuItem
                   key={action.name}
+                  onClick={() => handleWalletAction(action.name)}
                   className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground focus:text-foreground focus:bg-white/5"
                 >
                   <action.icon className="h-4 w-4" />
@@ -113,6 +132,12 @@ export function DashboardHeader() {
           <ConnectWallet />
         )}
       </div>
+
+      {/* Cross Chain Exchange Modal - Rendered in Portal */}
+      {mounted && showCrossChainModal && createPortal(
+        <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />,
+        document.body
+      )}
     </header>
   )
 }

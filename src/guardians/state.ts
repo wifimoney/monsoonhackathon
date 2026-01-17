@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import type { GuardiansState, GuardiansConfig, GuardianPreset } from './types';
+=======
+import type { GuardiansState, GuardiansConfig, GuardianEvent, GuardianDenial } from './types';
+>>>>>>> 81797cd (it WORKS)
 import { GUARDIAN_PRESETS } from './types';
 
 // ============ STATE ============
@@ -13,6 +17,11 @@ let state: GuardiansState = {
 };
 
 let config: GuardiansConfig = { ...GUARDIAN_PRESETS.default };
+
+// ============ EVENT STORE ============
+const events: GuardianEvent[] = [];
+const MAX_EVENTS = 50;
+let lastHealthCheck = Date.now();
 
 function getNextDayReset(): number {
     const tomorrow = new Date();
@@ -125,3 +134,48 @@ export function resetState(): void {
         dailyPnL: 0,
     };
 }
+// ============ EVENT TRACKING ============
+export function recordEvent(
+    actionType: GuardianEvent['actionType'],
+    payload: GuardianEvent['payload'],
+    passed: boolean,
+    denials: GuardianDenial[] = [],
+    txHash?: string
+): GuardianEvent {
+    const event: GuardianEvent = {
+        id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        actionType,
+        payload,
+        result: { passed, denials },
+        status: passed ? 'approved' : 'denied',
+        txHash,
+    };
+
+    // Add to front (newest first)
+    events.unshift(event);
+
+    // Trim to max
+    if (events.length > MAX_EVENTS) {
+        events.pop();
+    }
+
+    // Update health
+    lastHealthCheck = Date.now();
+
+    return event;
+}
+
+export function getEvents(limit = 10): GuardianEvent[] {
+    return events.slice(0, limit);
+}
+
+export function getLastHealthCheck(): number {
+    return lastHealthCheck;
+}
+
+export function clearEvents(): void {
+    events.length = 0;
+}
+
+
