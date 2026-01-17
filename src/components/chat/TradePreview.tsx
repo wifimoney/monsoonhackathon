@@ -12,21 +12,19 @@ interface Props {
     isLoading: boolean;
 }
 
-export function TradePreview({ preview, onExecute, isLoading }: Props) {
-    if (!preview) {
-        return (
-            <div className="card h-full flex flex-col justify-center items-center text-center p-6">
-                <div className="text-4xl mb-3">📊</div>
-                <h3 className="text-sm font-medium text-white mb-2">Trade Preview</h3>
-                <p className="text-[var(--muted)] text-sm">
-                    Describe a trade intent in the chat to see a preview here.
-                </p>
-            </div>
-        );
-    }
+export function TradePreview({ data, onExecute, isLoading }: TradePreviewProps) {
+    if (!data) return null;
 
-    const { actionIntent, guardrailsCheck } = preview;
-    const hasIssues = guardrailsCheck && !guardrailsCheck.passed;
+    const { intent, matches, estimatedPrice, estimatedFees, guardrailsCheck } = data;
+
+    // Default to passed if no check results yet
+    const guardrailsPassed = guardrailsCheck?.passed ?? true;
+    const warnings = guardrailsCheck?.warnings || [];
+    const issues = guardrailsCheck?.issues || [];
+
+    // Original hasIssues logic: const hasIssues = guardrailsCheck && !guardrailsCheck.passed;
+    // New logic based on guardrailsPassed:
+    const hasIssues = !guardrailsPassed;
 
     return (
         <div className="card flex flex-col">
@@ -98,8 +96,8 @@ export function TradePreview({ preview, onExecute, isLoading }: Props) {
                 onClick={onExecute}
                 disabled={isLoading || hasIssues}
                 className={`w-full mt-4 font-medium py-3 px-4 rounded-lg transition-colors ${hasIssues
-                        ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
-                        : 'bg-green-600 hover:bg-green-700 text-white'
+                    ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700 text-white'
                     }`}
             >
                 {isLoading ? (

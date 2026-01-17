@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
             recordAudit({
                 actionType: 'chat_trade',
                 status: 'denied',
-                market: actionIntent.market,
-                notionalUsd: actionIntent.notionalUsd,
+                market: 'market' in actionIntent ? actionIntent.market : undefined,
+                notionalUsd: 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0),
                 reason: 'Blocked by local guardrails',
                 intent: actionIntent,
                 metadata: { issues: guardrailsCheck.issues },
@@ -44,16 +44,21 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // 2. Get market info
-        const marketSymbol = actionIntent.market.split('/')[0];
-        const market = getMarketBySymbol(marketSymbol);
+        // 2. Get market info (only for market actions)
+        let marketSymbol: string | undefined;
+        let market: any;
 
-        if (!market) {
-            return NextResponse.json({
-                success: false,
-                stage: 'validation',
-                error: `Market ${marketSymbol} not found`,
-            }, { status: 400 });
+        if ('market' in actionIntent) {
+            marketSymbol = actionIntent.market.split('/')[0];
+            market = getMarketBySymbol(marketSymbol);
+
+            if (!market) {
+                return NextResponse.json({
+                    success: false,
+                    stage: 'validation',
+                    error: `Market ${marketSymbol} not found`,
+                }, { status: 400 });
+            }
         }
 
         // 3. Execute via Salt
@@ -68,23 +73,38 @@ export async function POST(request: NextRequest) {
             const accountId = process.env.SALT_ACCOUNT_ID || '696a40b5b0f979ec8ece4482';
             const chainId = Number(process.env.BROADCASTING_NETWORK_ID) || 421614;
 
-            // For hackathon: simulate trade as a transfer
-            // In production: call Hyperliquid router contract
-            const result = await salt.submitTx({
+            // Prepare transaction params
+            let txParams: any = {
                 accountId,
                 chainId,
-                to: '0x1111111111111111111111111111111111111111', // Simulated router
-                data: `0xdeadbeef${marketSymbol.toLowerCase()}`,
-                value: '0',
-            });
+            };
+
+            if ('market' in actionIntent) {
+                txParams = {
+                    ...txParams,
+                    to: '0x1111111111111111111111111111111111111111', // Simulated router
+                    data: `0xdeadbeef${(marketSymbol || '').toLowerCase()}`,
+                    value: '0',
+                };
+            } else if (actionIntent.type === 'TRANSFER') {
+                // Handle transfer
+                txParams = {
+                    ...txParams,
+                    to: actionIntent.to,
+                    data: '0x',
+                    value: '0', // In real app would be amount converted to wei
+                };
+            }
+
+            const result = await salt.submitTx(txParams);
 
             // Check for policy denial
             if (result.policyBreach?.denied) {
                 recordAudit({
                     actionType: 'chat_trade',
                     status: 'denied',
-                    market: actionIntent.market,
-                    notionalUsd: actionIntent.notionalUsd,
+                    market: 'market' in actionIntent ? actionIntent.market : undefined,
+                    notionalUsd: 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0),
                     reason: result.policyBreach.reason,
                     policies: (result.policyBreach as { rejectedPolicies?: Array<{ name: string }> })
                         .rejectedPolicies
@@ -105,8 +125,8 @@ export async function POST(request: NextRequest) {
             recordAudit({
                 actionType: 'chat_trade',
                 status: 'confirmed',
-                market: actionIntent.market,
-                notionalUsd: actionIntent.notionalUsd,
+                market: 'market' in actionIntent ? actionIntent.market : undefined,
+                notionalUsd: 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0),
                 txHash: result.txHash,
                 intent: actionIntent,
             });
@@ -117,10 +137,10 @@ export async function POST(request: NextRequest) {
                 txHash: result.txHash,
                 actionIntent,
                 receipt: {
-                    market: actionIntent.market,
-                    side: actionIntent.side,
-                    size: actionIntent.notionalUsd,
-                    price: market.price,
+                    market: 'market' in actionIntent ? actionIntent.market : 'N/A',
+                    side: 'side' in actionIntent ? actionIntent.side : undefined,
+                    size: 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0),
+                    price: market?.price,
                     timestamp: new Date().toISOString(),
                 },
             });
@@ -130,8 +150,8 @@ export async function POST(request: NextRequest) {
                 recordAudit({
                     actionType: 'chat_trade',
                     status: 'denied',
-                    market: actionIntent.market,
-                    notionalUsd: actionIntent.notionalUsd,
+                    market: 'market' in actionIntent ? actionIntent.market : undefined,
+                    notionalUsd: 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0),
                     reason: error.reason || error.message,
                     policies: error.rejectedPolicies?.map((p: { name: string }) => p.name),
                     intent: actionIntent,
@@ -153,8 +173,8 @@ export async function POST(request: NextRequest) {
             recordAudit({
                 actionType: 'chat_trade',
                 status: 'failed',
-                market: actionIntent.market,
-                notionalUsd: actionIntent.notionalUsd,
+                market: 'market' in actionIntent ? actionIntent.market : undefined,
+                notionalUsd: 'notionalUsd' in actionIntent ? actionIntent.notionalUsd : ('amount' in actionIntent ? actionIntent.amount : 0),
                 reason: error.message || 'Execution failed',
                 intent: actionIntent,
             });

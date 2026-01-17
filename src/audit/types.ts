@@ -6,7 +6,7 @@ export interface AuditRecord {
     timestamp: number;
 
     // Action categorization
-    actionType: 'trade' | 'transfer' | 'stake' | 'swap' | 'approval' | 'test' | 'order';
+    actionType: 'trade' | 'transfer' | 'stake' | 'swap' | 'approval' | 'test' | 'order' | 'chat_trade';
     actionCategory: 'execution' | 'order' | 'policy' | 'system';
 
     // Account context
@@ -50,7 +50,7 @@ export interface AuditRecord {
     source: 'user' | 'agent' | 'automation' | 'test';
 }
 
-export type AuditStatus = 'approved' | 'denied' | 'pending' | 'filled' | 'partial' | 'failed';
+export type AuditStatus = 'approved' | 'denied' | 'pending' | 'filled' | 'partial' | 'failed' | 'confirmed';
 
 // ============ FILTERING ============
 export interface AuditFilter {
@@ -106,6 +106,7 @@ export const AUDIT_STATUS_COLORS: Record<AuditStatus, string> = {
     filled: 'green',
     partial: 'blue',
     failed: 'orange',
+    confirmed: 'green',
 };
 
 export const AUDIT_STATUS_ICONS: Record<AuditStatus, string> = {
@@ -115,4 +116,5 @@ export const AUDIT_STATUS_ICONS: Record<AuditStatus, string> = {
     filled: '✅',
     partial: '📊',
     failed: '❌',
+    confirmed: '✅',
 };
