@@ -25,7 +25,7 @@ export function StarterPrompts({ onSelectPrompt }: StarterPromptsProps) {
           <button
             key={prompt}
             onClick={() => onSelectPrompt(prompt)}
-            className="btn btn-secondary"
+            className="px-4 py-2 rounded-lg border border-border/50 bg-card text-sm text-foreground hover:bg-primary/10 hover:border-primary/50 transition-colors"
           >
             {prompt}
           </button>

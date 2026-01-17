@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Bot, User } from 'lucide-react';
 import type { ChatMessage, TradeProposal, Position } from '@/types/trade';
 import { TradeProposalCard } from '../trade/TradeProposalCard';
 import { TradeModificationModal } from '../trade/TradeModificationModal';
@@ -82,6 +83,12 @@ interface MessageHistoryProps {
  * Task 4.4-4.5 Updates:
  * - Pass execution states to TradeProposalCard
  * - Support retry functionality for failed trades
+ *
+ * Task Group 2 Updates:
+ * - Added Bot and User avatar icons from lucide-react
+ * - Updated message layout with flex gap-3 and justify-start/justify-end
+ * - Updated bubble styling with rounded-2xl, bg-card/bg-primary variants
+ * - Updated scrollable area with flex-1 overflow-y-auto space-y-4 pb-4
  */
 export function MessageHistory({
   messages,
@@ -224,10 +231,10 @@ export function MessageHistory({
 
   return (
     <>
+      {/* Task 2.4: Updated scrollable message area styling */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto px-4 py-6 space-y-4"
-        style={{ maxHeight: 'calc(100vh - 200px)' }}
+        className="flex-1 overflow-y-auto space-y-4 pb-4"
       >
         {messages.map((message) => (
           <MessageBubble
@@ -266,15 +273,22 @@ export function MessageHistory({
 
 function ThinkingIndicator() {
   return (
-    <div className="flex justify-start">
-      <div className="bg-transparent text-[var(--foreground)] rounded-lg px-4 py-3">
+    <div className="flex gap-3 justify-start">
+      {/* Bot avatar for thinking indicator */}
+      <div
+        data-testid="bot-avatar"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+      >
+        <Bot className="h-4 w-4" />
+      </div>
+      <div className="max-w-xl rounded-2xl px-4 py-3 bg-card border border-border/50">
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
             <span className="w-2 h-2 bg-[var(--foreground)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
             <span className="w-2 h-2 bg-[var(--foreground)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
             <span className="w-2 h-2 bg-[var(--foreground)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
-          <span className="text-sm text-[var(--muted-foreground)]">Thinking...</span>
+          <span className="text-sm leading-relaxed text-[var(--muted-foreground)]">Thinking...</span>
         </div>
       </div>
     </div>
@@ -322,28 +336,38 @@ function MessageBubble({
   );
 
   return (
+    // Task 2.2: Updated flex layout for messages
     <div
       data-role={message.role}
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+      data-testid={`message-container-${isUser ? 'user' : 'bot'}`}
+      className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
-      <div
-        className={`max-w-[80%] ${isUser ? 'order-1' : 'order-0'}`}
-      >
-        {/* Message content */}
+      {/* Task 2.2: Bot avatar - only show for assistant messages */}
+      {!isUser && (
         <div
-          className={`rounded-lg px-4 py-3 ${
+          data-testid="bot-avatar"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+        >
+          <Bot className="h-4 w-4" />
+        </div>
+      )}
+
+      <div className="max-w-xl">
+        {/* Task 2.3: Updated message bubble styling */}
+        <div
+          data-testid={`${isUser ? 'user' : 'bot'}-message-bubble`}
+          className={`rounded-2xl px-4 py-3 ${
             isUser
-              ? 'bg-[var(--card)] text-[var(--foreground)]'
-              : 'bg-transparent text-[var(--foreground)]'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-card border border-border/50'
           }`}
-          style={{
-            fontSize: isUser ? '1rem' : '1.05rem',
-          }}
         >
           {isUser ? (
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            // Task 2.3: Updated text styling
+            <div className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</div>
           ) : (
-            <div className="prose prose-invert prose-sm max-w-none">
+            // Task 2.3: Updated text styling for bot messages
+            <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
               <ReactMarkdown
                 components={{
                   h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2">{children}</h3>,
@@ -377,6 +401,16 @@ function MessageBubble({
           </div>
         )}
       </div>
+
+      {/* Task 2.2: User avatar - only show for user messages */}
+      {isUser && (
+        <div
+          data-testid="user-avatar"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"
+        >
+          <User className="h-4 w-4" />
+        </div>
+      )}
     </div>
   );
 }

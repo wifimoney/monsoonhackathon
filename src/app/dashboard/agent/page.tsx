@@ -1,142 +1,189 @@
-"use client"
+'use client';
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Send, Bot, User, TrendingUp, AlertTriangle } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { useCallback, useState, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Send } from 'lucide-react';
+import { MessageHistory, StarterPrompts } from '@/components/chat';
+import { useChat } from '@/hooks/useChat';
+import { usePearAuth } from '@/hooks/usePearAuth';
+import { AuthModal } from '@/components/pear/AuthModal';
+import type { Position } from '@/types/trade';
 
-interface Message {
-  id: string
-  role: "user" | "agent"
-  content: string
-  tradePreview?: {
-    market: string
-    side: "Buy" | "Sell"
-    size: string
-    riskLevel: "Low" | "Medium" | "High"
-  }
-}
-
-const initialMessages: Message[] = [
-  {
-    id: "1",
-    role: "agent",
-    content:
-      "Welcome to Monsoon Agent. I can help you execute trades, analyze markets, and manage your positions. What would you like to do?",
-  },
-  {
-    id: "2",
-    role: "user",
-    content: "Buy $1000 ETH",
-  },
-  {
-    id: "3",
-    role: "agent",
-    content: "I've prepared a trade for you. Here's the preview:",
-    tradePreview: {
-      market: "ETH/USDC",
-      side: "Buy",
-      size: "$1,000.00",
-      riskLevel: "Low",
-    },
-  },
-]
-
+/**
+ * Dashboard Agent page with AI-driven trading and Pear Protocol integration.
+ *
+ * Task Group 1: Merged trade page logic into dashboard agent page
+ * - Imports useChat and usePearAuth hooks
+ * - Includes all trade handlers
+ * - Conditional rendering of StarterPrompts vs MessageHistory
+ * - AuthModal integration for trade acceptance flow
+ */
 export default function AgentPage() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
-  const [input, setInput] = useState("")
+  // Chat hook for messages and trade functionality
+  const {
+    messages,
+    isLoading,
+    acceptedProposalIds,
+    executionStates,
+    getExecutionState,
+    sendMessage,
+    sendModification,
+    acceptTrade,
+    retryTrade,
+  } = useChat();
 
-  const handleSend = () => {
-    if (!input.trim()) return
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
+  // Pear authentication hook
+  const { isAuthenticated, checkAuthStatus } = usePearAuth();
+
+  // State for auth modal and pending trade
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const pendingTradeRef = useRef<{ proposalId: string; positionSizeUsd: number } | null>(null);
+
+  // Input state for the chat input
+  const [input, setInput] = useState('');
+
+  /**
+   * Handle sending a message
+   */
+  const handleSend = useCallback(
+    (message?: string) => {
+      const messageToSend = message || input;
+      if (!messageToSend.trim()) return;
+      sendMessage(messageToSend);
+      if (!message) {
+        setInput('');
+      }
+    },
+    [input, sendMessage]
+  );
+
+  /**
+   * Handle modification from chat (text-based, legacy)
+   */
+  const handleModify = useCallback(
+    (refinementMessage: string) => {
+      sendMessage(refinementMessage);
+    },
+    [sendMessage]
+  );
+
+  /**
+   * Handle modification submission from the modal
+   * Wires the MessageHistory to the useChat sendModification function
+   */
+  const handleModifySubmit = useCallback(
+    async (
+      proposalId: string,
+      longPositions: Position[],
+      shortPositions: Position[]
+    ) => {
+      await sendModification(proposalId, longPositions, shortPositions);
+    },
+    [sendModification]
+  );
+
+  /**
+   * Execute the pending trade after authentication completes
+   */
+  const executePendingTrade = useCallback(async () => {
+    if (pendingTradeRef.current) {
+      const { proposalId, positionSizeUsd } = pendingTradeRef.current;
+      pendingTradeRef.current = null;
+      setIsAuthModalOpen(false);
+      await acceptTrade(proposalId, positionSizeUsd);
     }
-    setMessages([...messages, newMessage])
-    setInput("")
-  }
+  }, [acceptTrade]);
+
+  /**
+   * Handle accept trade submission from the modal
+   * Trigger authentication automatically when user first accepts a trade
+   * - Check if already authenticated before showing modal
+   * - After all 4 steps complete, proceed to execute the trade
+   */
+  const handleAcceptSubmit = useCallback(
+    async (proposalId: string, positionSizeUsd: number) => {
+      // Check current auth status
+      const authed = await checkAuthStatus();
+
+      if (authed) {
+        // User is already authenticated, proceed with trade
+        await acceptTrade(proposalId, positionSizeUsd);
+      } else {
+        // User needs to authenticate first
+        // Store the pending trade details
+        pendingTradeRef.current = { proposalId, positionSizeUsd };
+        // Open auth modal
+        setIsAuthModalOpen(true);
+      }
+    },
+    [acceptTrade, checkAuthStatus]
+  );
+
+  /**
+   * Handle retry trade
+   */
+  const handleRetryTrade = useCallback(
+    async (proposalId: string, positionSizeUsd: number) => {
+      // Check auth status again in case token expired
+      const authed = await checkAuthStatus();
+
+      if (authed) {
+        await retryTrade(proposalId, positionSizeUsd);
+      } else {
+        // User needs to re-authenticate
+        pendingTradeRef.current = { proposalId, positionSizeUsd };
+        setIsAuthModalOpen(true);
+      }
+    },
+    [retryTrade, checkAuthStatus]
+  );
+
+  /**
+   * Handle auth modal close (without completing)
+   */
+  const handleAuthModalClose = useCallback(() => {
+    setIsAuthModalOpen(false);
+    pendingTradeRef.current = null;
+  }, []);
+
+  /**
+   * Handle auth completion - execute the pending trade
+   */
+  const handleAuthComplete = useCallback(() => {
+    executePendingTrade();
+  }, [executePendingTrade]);
+
+  /**
+   * Handle selecting a starter prompt
+   */
+  const handleSelectPrompt = useCallback(
+    (prompt: string) => {
+      sendMessage(prompt);
+    },
+    [sendMessage]
+  );
 
   return (
     <div className="flex flex-col h-[calc(100vh-10rem)]">
-      {/* Chat Window */}
-      <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-        {messages.map((message) => (
-          <div key={message.id} className={cn("flex gap-3", message.role === "user" ? "justify-end" : "justify-start")}>
-            {message.role === "agent" && (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Bot className="h-4 w-4" />
-              </div>
-            )}
-            <div
-              className={cn(
-                "max-w-xl rounded-2xl px-4 py-3",
-                message.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border/50",
-              )}
-            >
-              <p className="text-sm leading-relaxed">{message.content}</p>
-
-              {/* Trade Preview Card */}
-              {message.tradePreview && (
-                <div className="mt-3 rounded-xl border border-border/50 bg-black/50 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    <span className="text-label">Trade Preview</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-caption">Market</p>
-                      <p className="font-mono font-medium text-sm">{message.tradePreview.market}</p>
-                    </div>
-                    <div>
-                      <p className="text-caption">Side</p>
-                      <p
-                        className={cn(
-                          "font-mono font-medium text-sm",
-                          message.tradePreview.side === "Buy" ? "text-emerald-400" : "text-red-400",
-                        )}
-                      >
-                        {message.tradePreview.side}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-caption">Size</p>
-                      <p className="font-mono font-medium text-sm">{message.tradePreview.size}</p>
-                    </div>
-                    <div>
-                      <p className="text-caption">Risk Level</p>
-                      <div className="flex items-center gap-1">
-                        {message.tradePreview.riskLevel === "High" && (
-                          <AlertTriangle className="h-3 w-3 text-yellow-400" />
-                        )}
-                        <p
-                          className={cn(
-                            "font-medium text-sm",
-                            message.tradePreview.riskLevel === "Low" && "text-emerald-400",
-                            message.tradePreview.riskLevel === "Medium" && "text-yellow-400",
-                            message.tradePreview.riskLevel === "High" && "text-red-400",
-                          )}
-                        >
-                          {message.tradePreview.riskLevel}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <Button className="w-full mt-4 bg-gradient-to-r from-primary to-red-600 hover:from-primary/90 hover:to-red-600/90 font-medium tracking-tight">
-                    Execute Trade
-                  </Button>
-                </div>
-              )}
-            </div>
-            {message.role === "user" && (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white">
-                <User className="h-4 w-4" />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Starter prompts or message history */}
+      {messages.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center">
+          <StarterPrompts onSelectPrompt={handleSelectPrompt} />
+        </div>
+      ) : (
+        <MessageHistory
+          messages={messages}
+          onModify={handleModify}
+          onModifySubmit={handleModifySubmit}
+          onAcceptSubmit={handleAcceptSubmit}
+          acceptedProposalIds={acceptedProposalIds}
+          executionStates={executionStates}
+          getExecutionState={getExecutionState}
+          onRetryTrade={handleRetryTrade}
+          isLoading={isLoading}
+        />
+      )}
 
       {/* Input Area */}
       <div className="border-t border-border/50 pt-4">
@@ -144,19 +191,26 @@ export default function AgentPage() {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Type your command..."
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Describe your trade idea..."
             className="flex-1 bg-card border-border/50 focus-visible:ring-primary text-sm"
           />
           <Button
-            onClick={handleSend}
+            onClick={() => handleSend()}
+            disabled={isLoading}
             className="bg-gradient-to-r from-primary to-red-600 hover:from-primary/90 hover:to-red-600/90"
           >
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        <p className="mt-2 text-caption">Try: &quot;Buy $1000 ETH&quot; or &quot;Show my positions&quot;</p>
       </div>
+
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={handleAuthModalClose}
+        onAuthComplete={handleAuthComplete}
+      />
     </div>
-  )
+  );
 }
