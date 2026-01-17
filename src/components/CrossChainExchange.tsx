@@ -180,6 +180,8 @@ createConfig({
 });
 
 
+type ChainType = 'EVM' | 'SVM' | 'MVM' | 'UTXO';
+
 interface ChainData {
     key: string;
     name: string;
@@ -191,7 +193,7 @@ interface ChainData {
 interface ChainButtonProps {
     chain: { id: number; name: string };
     logoURI?: string;
-    chainIcon: string;
+    chainIcon?: string;
     onClick: () => void;
 }
 
@@ -215,7 +217,7 @@ function ChainButton({ chain, logoURI, chainIcon, onClick }: ChainButtonProps) {
                     }}
                 />
             ) : (
-                <div className="text-2xl mb-2">{chainIcon}</div>
+                <div className="text-2xl mb-2">{chainIcon || chain.name.slice(0, 3).toUpperCase()}</div>
             )}
             <div className="font-semibold">{chain.name}</div>
         </button>
@@ -231,7 +233,8 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [selectedChain, setSelectedChain] = useState<number | null>(null);
     const [chainLogos, setChainLogos] = useState<Record<number, string>>({});
     const [allChainsData, setAllChainsData] = useState<ChainData[]>([]);
-    const [isLoadingChains, setIsLoadingChains] = useState(true);
+    const [selectedChainType, setSelectedChainType] = useState<ChainType | null>(null);
+    const [isLoadingChains, setIsLoadingChains] = useState(false);
     const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
     const [amount, setAmount] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -245,11 +248,19 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
     const [showDepositDropdown, setShowDepositDropdown] = useState(false); // Deposit dropdown visibility
 
-    // Fetch chain data from LiFi API via our API route
+    // Fetch chain data from LiFi API via our API route when chain type is selected
     useEffect(() => {
+        if (!selectedChainType) {
+            setAllChainsData([]);
+            setChainLogos({});
+            return;
+        }
+
         const fetchChains = async () => {
+            setIsLoadingChains(true);
             try {
-                const response = await fetch('/api/chains');
+                console.log(`[Chains] Fetching chains for ${selectedChainType}`);
+                const response = await fetch(`/api/chains?chainTypes=${selectedChainType}`);
                 
                 if (!response.ok) {
                     throw new Error('Failed to fetch chains');
@@ -263,10 +274,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 
                 // Extract all chains and logos
                 if (data.chains && Array.isArray(data.chains)) {
-                    console.log(`[Chains] Processing ${data.chains.length} chains from API`);
+                    console.log(`[Chains] Processing ${data.chains.length} ${selectedChainType} chains from API`);
+                    console.log(`[Chains] 📋 All ${selectedChainType} chains fetched:`, data.chains.map((c: ChainData) => ({
+                        id: c.id,
+                        name: c.name,
+                        key: c.key,
+                        chainType: c.chainType,
+                        logoURI: c.logoURI
+                    })));
                     
                     data.chains.forEach((chain: ChainData) => {
-                        // Store all chain data
+                        // Store all chain data with logos
                         chainsData.push({
                             key: chain.key,
                             name: chain.name,
@@ -275,8 +293,8 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                             logoURI: chain.logoURI,
                         });
                         
-                        // Store logos for supported chains
-                        if (SUPPORTED_CHAINS.some((c) => c.id === chain.id) && chain.logoURI) {
+                        // Store ALL logos from API, not just for supported chains
+                        if (chain.logoURI) {
                             logos[chain.id] = chain.logoURI;
                             console.log(`[Chains] ✅ Found logo for chain ${chain.id} (${chain.name}):`, {
                                 chainId: chain.id,
@@ -311,14 +329,13 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         };
         
         fetchChains();
-    }, []);
+    }, [selectedChainType]);
 
-    // Filter to only show EVM chains from the API data
-    const evmChains = allChainsData
-        .filter((chain) => chain.chainType === 'EVM')
-        .filter((chain) => SUPPORTED_CHAINS.some((c) => c.id === chain.id))
-        .map((chain) => SUPPORTED_CHAINS.find((c) => c.id === chain.id)!)
-        .filter(Boolean);
+    // Filter chains by selected chain type from the API data
+    // Show all chains from API, not just supported ones
+    const filteredChainsData = selectedChainType
+        ? allChainsData.filter((chain) => chain.chainType === selectedChainType)
+        : [];
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
@@ -868,38 +885,86 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 {/* Step 1: Select Chain */}
                 {step === 'chain' && (
                     <>
-                        <p className="text-[var(--muted)] text-sm">Select your origin chain</p>
-                        {isLoadingChains ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                {SUPPORTED_CHAINS.map((chain) => (
-                                    <div
-                                        key={chain.id}
-                                        className="card py-4 text-center"
-                                    >
-                                        <div className="animate-pulse bg-[var(--card-border)] w-12 h-12 rounded-full mx-auto mb-2"></div>
-                                        <div className="h-4 bg-[var(--card-border)] rounded w-3/4 mx-auto"></div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : evmChains.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                {evmChains.map((chain) => {
-                                    const logoURI = chainLogos[chain.id];
-                                    return (
-                                        <ChainButton
-                                            key={chain.id}
-                                            chain={chain}
-                                            logoURI={logoURI}
-                                            chainIcon={CHAIN_ICONS[chain.id] || '?'}
-                                            onClick={() => handleChainSelect(chain.id)}
-                                        />
-                                    );
-                                })}
-                            </div>
+                        {/* Chain Type Selector - Show first if no chain type selected */}
+                        {!selectedChainType ? (
+                            <>
+                                <p className="text-[var(--muted)] text-sm mb-4">Select chain type</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {(['EVM', 'SVM', 'MVM', 'UTXO'] as ChainType[]).map((chainType) => (
+                                        <button
+                                            key={chainType}
+                                            onClick={() => setSelectedChainType(chainType)}
+                                            className="card py-6 text-center hover:border-[var(--primary)] transition-all flex flex-col items-center gap-2"
+                                        >
+                                            <div className="text-2xl font-bold">{chainType}</div>
+                                            <div className="text-xs text-[var(--muted)]">Click to view chains</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
                         ) : (
-                            <div className="card py-8 text-center">
-                                <p className="text-[var(--muted)]">Loading EVM chains...</p>
-                            </div>
+                            <>
+                                {/* Back button to change chain type */}
+                                <div className="flex items-center gap-3 mb-4">
+                                    <button
+                                        onClick={() => setSelectedChainType(null)}
+                                        className="text-[var(--muted)] hover:text-[var(--foreground)] flex items-center gap-2"
+                                    >
+                                        <span>←</span>
+                                        <span className="text-sm">Back to chain types</span>
+                                    </button>
+                                    <div className="flex-1"></div>
+                                    <div className="px-3 py-1 bg-[var(--primary)]/20 rounded-lg text-sm font-semibold">
+                                        {selectedChainType}
+                                    </div>
+                                </div>
+                                
+                                <p className="text-[var(--muted)] text-sm">Select your origin chain</p>
+                                {isLoadingChains ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {[1, 2, 3, 4].map((i) => (
+                                            <div
+                                                key={i}
+                                                className="card py-4 text-center"
+                                            >
+                                                <div className="animate-pulse bg-[var(--card-border)] w-12 h-12 rounded-full mx-auto mb-2"></div>
+                                                <div className="h-4 bg-[var(--card-border)] rounded w-3/4 mx-auto"></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : filteredChainsData.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {filteredChainsData.map((chainData) => {
+                                            const logoURI = chainData.logoURI || chainLogos[chainData.id];
+                                            // Find if this chain is in SUPPORTED_CHAINS for handling
+                                            const supportedChain = SUPPORTED_CHAINS.find((c) => c.id === chainData.id);
+                                            const chainIcon = supportedChain ? (CHAIN_ICONS[chainData.id] || '?') : chainData.name.slice(0, 3).toUpperCase();
+                                            
+                                            return (
+                                                <ChainButton
+                                                    key={chainData.id}
+                                                    chain={{ id: chainData.id, name: chainData.name }}
+                                                    logoURI={logoURI}
+                                                    chainIcon={chainIcon}
+                                                    onClick={() => {
+                                                        if (supportedChain) {
+                                                            handleChainSelect(chainData.id);
+                                                        } else {
+                                                            console.warn(`[Chains] Chain ${chainData.id} (${chainData.name}) is not supported yet`);
+                                                        }
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="card py-8 text-center">
+                                        <p className="text-[var(--muted)]">
+                                            No {selectedChainType} chains available
+                                        </p>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </>
                 )}

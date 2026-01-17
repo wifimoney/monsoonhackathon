@@ -1,10 +1,18 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const response = await fetch('https://li.quest/v1/chains', {
+    // Get chainTypes query parameter, default to EVM
+    const searchParams = request.nextUrl.searchParams;
+    const chainTypes = searchParams.get('chainTypes') || 'EVM';
+    
+    // Build the API URL with chainTypes query parameter
+    const apiUrl = new URL('https://li.quest/v1/chains');
+    apiUrl.searchParams.set('chainTypes', chainTypes);
+    
+    const response = await fetch(apiUrl.toString(), {
       headers: {
-        'x-lifi-api-key': 'monsoon',
+        'x-lifi-api-key': 'e59c773a-c220-4e7d-86ba-787f3b237921.1a2b24f4-1531-4322-91ec-48ae5abddb33',
       },
       // Revalidate every hour
       next: { revalidate: 3600 },
