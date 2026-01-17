@@ -2,12 +2,22 @@
 
 import type { TradeProposal, Position } from '@/types/trade';
 
+/**
+ * Props for TradeProposalCard component
+ * Task 3.8: Updated with isLatest and onModifySubmit props
+ */
 interface TradeProposalCardProps {
+  /** The trade proposal to display */
   proposal: TradeProposal;
-  onModify: (refinementMessage: string) => void;
+  /** Callback to open the modification modal (passes proposal ID) */
+  onModify: (proposalId: string) => void;
+  /** Callback when modal modification is submitted (kept for potential future use) */
+  onModifySubmit?: (longPositions: Position[], shortPositions: Position[]) => Promise<void>;
+  /** Whether this is the latest proposal (controls button disabled state) */
+  isLatest?: boolean;
 }
 
-function PositionList({ positions, side }: { positions: Position[]; side: 'long' | 'short' }) {
+function PositionList({ positions }: { positions: Position[] }) {
   if (positions.length === 0) {
     return <div className="text-[var(--muted)] text-sm italic">No positions</div>;
   }
@@ -27,7 +37,7 @@ function PositionList({ positions, side }: { positions: Position[]; side: 'long'
               rel="noopener noreferrer"
               className="text-xs text-[var(--primary)] hover:underline"
             >
-              Trade on Hyperliquid →
+              Trade on Hyperliquid
             </a>
           </div>
           <div className="text-right">
@@ -39,8 +49,25 @@ function PositionList({ positions, side }: { positions: Position[]; side: 'long'
   );
 }
 
-export function TradeProposalCard({ proposal, onModify }: TradeProposalCardProps) {
+/**
+ * Card component displaying a trade proposal with LONG and SHORT positions.
+ *
+ * Task 3.8 Updates:
+ * - Added isLatest prop to control button state
+ * - Disabled and dimmed Modify/Accept buttons when not latest
+ * - Added cursor: not-allowed style for disabled buttons
+ * - Wire Modify button to open TradeModificationModal
+ * - Pass onModifySubmit callback for modal save
+ */
+export function TradeProposalCard({
+  proposal,
+  onModify,
+  onModifySubmit: _onModifySubmit, // Available for future modal integration
+  isLatest = true,
+}: TradeProposalCardProps) {
   const handleAccept = () => {
+    if (!isLatest) return;
+
     console.log('Trade proposal accepted:', proposal);
     console.log('Proposal ID:', proposal.id);
     console.log('Long positions:', proposal.longPositions);
@@ -48,12 +75,33 @@ export function TradeProposalCard({ proposal, onModify }: TradeProposalCardProps
   };
 
   const handleModify = () => {
-    const refinementMessage = `I'd like to modify this proposal. Current: Long ${proposal.longPositions.map(p => p.symbol).join(', ') || 'none'}, Short ${proposal.shortPositions.map(p => p.symbol).join(', ') || 'none'}. Please adjust...`;
-    onModify(refinementMessage);
+    if (!isLatest) return;
+
+    // Call the onModify callback which will open the modal in MessageHistory
+    onModify(proposal.id);
   };
 
+  // Button styles for disabled state
+  const disabledButtonStyle = {
+    opacity: 0.4,
+    cursor: 'not-allowed' as const,
+    pointerEvents: 'none' as const,
+  };
+
+  const enabledButtonStyle = {
+    opacity: 1,
+    cursor: 'pointer' as const,
+  };
+
+  const buttonStyle = isLatest ? enabledButtonStyle : disabledButtonStyle;
+
   return (
-    <div className="card p-4 space-y-4">
+    <div
+      className="card p-4 space-y-4"
+      style={{
+        opacity: isLatest ? 1 : 0.7,
+      }}
+    >
       {/* Two-column layout for LONG and SHORT */}
       <div className="grid grid-cols-2 gap-4">
         {/* LONG side */}
@@ -70,7 +118,7 @@ export function TradeProposalCard({ proposal, onModify }: TradeProposalCardProps
               LONG
             </span>
           </div>
-          <PositionList positions={proposal.longPositions} side="long" />
+          <PositionList positions={proposal.longPositions} />
         </div>
 
         {/* SHORT side */}
@@ -87,19 +135,39 @@ export function TradeProposalCard({ proposal, onModify }: TradeProposalCardProps
               SHORT
             </span>
           </div>
-          <PositionList positions={proposal.shortPositions} side="short" />
+          <PositionList positions={proposal.shortPositions} />
         </div>
       </div>
 
       {/* Action buttons */}
       <div className="flex gap-3">
-        <button onClick={handleAccept} className="btn btn-accent flex-1">
+        <button
+          onClick={handleAccept}
+          disabled={!isLatest}
+          className="btn btn-accent flex-1"
+          style={buttonStyle}
+        >
           Accept
         </button>
-        <button onClick={handleModify} className="btn btn-secondary flex-1">
+        <button
+          onClick={handleModify}
+          disabled={!isLatest}
+          className="btn btn-secondary flex-1"
+          style={buttonStyle}
+        >
           Modify
         </button>
       </div>
+
+      {/* Indicator for older proposals */}
+      {!isLatest && (
+        <div
+          className="text-xs text-center"
+          style={{ color: 'var(--muted)' }}
+        >
+          This is an older proposal. Only the latest proposal can be modified.
+        </div>
+      )}
     </div>
   );
 }

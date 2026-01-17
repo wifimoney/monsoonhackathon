@@ -1,10 +1,12 @@
 'use client';
 
+import { useCallback } from 'react';
 import { ChatInput, MessageHistory, StarterPrompts } from '@/components/chat';
 import { useChat } from '@/hooks/useChat';
+import type { Position } from '@/types/trade';
 
 export default function AITradePage() {
-  const { messages, isLoading, sendMessage } = useChat();
+  const { messages, isLoading, sendMessage, sendModification } = useChat();
 
   const handleSend = (message: string) => {
     sendMessage(message);
@@ -13,6 +15,21 @@ export default function AITradePage() {
   const handleModify = (refinementMessage: string) => {
     sendMessage(refinementMessage);
   };
+
+  /**
+   * Handle modification submission from the modal
+   * Wires the MessageHistory to the useChat sendModification function
+   */
+  const handleModifySubmit = useCallback(
+    async (
+      proposalId: string,
+      longPositions: Position[],
+      shortPositions: Position[]
+    ) => {
+      await sendModification(proposalId, longPositions, shortPositions);
+    },
+    [sendModification]
+  );
 
   const handleSelectPrompt = (prompt: string) => {
     sendMessage(prompt);
@@ -27,7 +44,12 @@ export default function AITradePage() {
             <StarterPrompts onSelectPrompt={handleSelectPrompt} />
           </div>
         ) : (
-          <MessageHistory messages={messages} onModify={handleModify} />
+          <MessageHistory
+            messages={messages}
+            onModify={handleModify}
+            onModifySubmit={handleModifySubmit}
+            isLoading={isLoading}
+          />
         )}
       </div>
 

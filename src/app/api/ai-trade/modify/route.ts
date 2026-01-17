@@ -1,19 +1,16 @@
 import { NextResponse } from 'next/server';
-import type { ChatMessage, TradeProposal, RecommendedToken } from '@/types/trade';
-import { generateSystemPrompt } from '@/lib/ai-trade-prompt';
+import type {
+  ModificationRequest,
+  TradeProposal,
+  Position,
+  RecommendedToken,
+} from '@/types/trade';
+import { generateModificationPrompt } from '@/lib/ai-trade-prompt';
 
 /**
- * Request body for the chat endpoint
+ * Response structure for the modify endpoint
  */
-interface ChatRequest {
-  messages: ChatMessage[];
-  userInput: string;
-}
-
-/**
- * Response structure for the chat endpoint
- */
-interface ChatResponse {
+interface ModifyResponse {
   content: string;
   tradeProposal?: TradeProposal;
 }
@@ -35,7 +32,7 @@ interface OpenAIResponse {
 }
 
 /**
- * Token data from the tokens endpoint
+ * Token data from Hyperliquid
  */
 interface TokenData {
   symbol: string;
@@ -44,7 +41,7 @@ interface TokenData {
 }
 
 /**
- * Fetches available tokens from the internal tokens endpoint
+ * Fetches available tokens from Hyperliquid API
  */
 async function fetchAvailableTokens(): Promise<TokenData[]> {
   try {
@@ -89,29 +86,34 @@ async function fetchAvailableTokens(): Promise<TokenData[]> {
 }
 
 /**
+ * Validates that the total weight of positions does not exceed 100%
+ */
+function validatePositionWeights(
+  positions: Position[],
+  side: 'LONG' | 'SHORT'
+): { valid: boolean; total: number; error?: string } {
+  const total = positions.reduce((sum, p) => sum + p.weight, 0);
+
+  if (total > 100) {
+    return {
+      valid: false,
+      total,
+      error: `${side} side total weight (${total}%) exceeds 100%`,
+    };
+  }
+
+  return { valid: true, total };
+}
+
+/**
  * Extracts a trade proposal JSON from the AI response content.
- * Now includes support for recommendedTokens array.
- * Includes fallback parsing for different JSON formats.
+ * Includes support for recommendedTokens array.
  */
 function extractTradeProposal(content: string): Omit<TradeProposal, 'id' | 'createdAt'> | null {
-  // Try markdown code fence first (preferred format)
-  let jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-
-  // Fallback: plain triple backticks without 'json' specifier
-  if (!jsonMatch) {
-    jsonMatch = content.match(/```\s*({\s*[\s\S]*?})\s*```/);
-  }
-
-  // Fallback: raw JSON object with longPositions or shortPositions
-  if (!jsonMatch) {
-    const rawMatch = content.match(/\{\s*"(?:longPositions|shortPositions)"[\s\S]*?\}(?=\s*\n\n|\s*$)/);
-    if (rawMatch) {
-      jsonMatch = [rawMatch[0], rawMatch[0]];
-    }
-  }
+  // Look for JSON block in markdown code fence
+  const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
 
   if (!jsonMatch) {
-    console.log('[extractTradeProposal] No JSON found in AI response');
     return null;
   }
 
@@ -145,17 +147,16 @@ function extractTradeProposal(content: string): Omit<TradeProposal, 'id' | 'crea
       takeProfit: 0,
       recommendedTokens,
     };
-  } catch (e) {
-    console.error('[extractTradeProposal] JSON parse error:', e);
+  } catch {
     return null;
   }
 }
 
 /**
- * POST /api/ai-trade/chat
+ * POST /api/ai-trade/modify
  *
- * Accepts message history and user input, returns AI response with optional trade proposal.
- * Trade proposals now include up to 3 recommended tokens for modification suggestions.
+ * Accepts a modification request and returns AI response with updated trade proposal.
+ * Validates that neither side exceeds 100% total weight.
  */
 export async function POST(request: Request) {
   try {
@@ -169,54 +170,63 @@ export async function POST(request: Request) {
     }
 
     // Parse request body
-    const body: ChatRequest = await request.json();
-    const { messages, userInput } = body;
+    const body: ModificationRequest = await request.json();
+    const { originalProposalId, longPositions, shortPositions } = body;
 
-    if (!userInput || typeof userInput !== 'string') {
+    // Validate required fields
+    if (!originalProposalId) {
       return NextResponse.json(
-        { success: false, error: 'userInput is required' },
+        { success: false, error: 'originalProposalId is required' },
         { status: 400 }
       );
     }
 
-    // Validate messages array
-    if (!Array.isArray(messages)) {
+    if (!Array.isArray(longPositions) || !Array.isArray(shortPositions)) {
       return NextResponse.json(
-        { success: false, error: 'messages must be an array' },
+        { success: false, error: 'longPositions and shortPositions must be arrays' },
         { status: 400 }
       );
     }
 
-    // Validate each message has required fields
-    for (const msg of messages) {
-      if (!msg || typeof msg.role !== 'string' || typeof msg.content !== 'string') {
-        return NextResponse.json(
-          { success: false, error: 'Each message must have role and content strings' },
-          { status: 400 }
-        );
-      }
-      if (msg.role !== 'user' && msg.role !== 'assistant') {
-        return NextResponse.json(
-          { success: false, error: 'Message role must be "user" or "assistant"' },
-          { status: 400 }
-        );
-      }
+    // Validate LONG side weights
+    const longValidation = validatePositionWeights(longPositions, 'LONG');
+    if (!longValidation.valid) {
+      return NextResponse.json(
+        { success: false, error: longValidation.error },
+        { status: 400 }
+      );
+    }
+
+    // Validate SHORT side weights
+    const shortValidation = validatePositionWeights(shortPositions, 'SHORT');
+    if (!shortValidation.valid) {
+      return NextResponse.json(
+        { success: false, error: shortValidation.error },
+        { status: 400 }
+      );
     }
 
     // Fetch available tokens for context
     const tokens = await fetchAvailableTokens();
 
-    // Generate system prompt with token context
-    const systemPrompt = generateSystemPrompt(tokens);
+    // Generate modification prompt
+    const systemPrompt = generateModificationPrompt(tokens, longPositions, shortPositions);
 
-    // Build message history for OpenAI
+    // Build message for OpenAI
     const openAIMessages: OpenAIMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...messages.map(msg => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      })),
-      { role: 'user', content: userInput },
+      {
+        role: 'user',
+        content: `The user has modified their trade proposal. Please analyze these modifications and provide updated reasoning. The modified positions are:
+
+LONG positions (${longValidation.total}% total):
+${longPositions.map(p => `- ${p.symbol} (${p.name}): ${p.weight}%`).join('\n')}
+
+SHORT positions (${shortValidation.total}% total):
+${shortPositions.map(p => `- ${p.symbol} (${p.name}): ${p.weight}%`).join('\n')}
+
+Please provide your analysis of these modifications and suggest up to 3 additional tokens that might complement this trade.`,
+      },
     ];
 
     // Call OpenRouter API with 30 second timeout
@@ -229,7 +239,7 @@ export async function POST(request: Request) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'HTTP-Referer': 'https://monsoon.app',
           'X-Title': 'Monsoon Trade Ideation',
         },
@@ -261,7 +271,7 @@ export async function POST(request: Request) {
     aiContent = aiContent.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
 
     // Build response
-    const response: ChatResponse = {
+    const response: ModifyResponse = {
       content: aiContent,
     };
 
@@ -271,11 +281,21 @@ export async function POST(request: Request) {
         ...proposalData,
         createdAt: new Date(),
       };
+    } else {
+      // If AI didn't generate a new proposal, use the modified positions
+      response.tradeProposal = {
+        id: `proposal-${Date.now()}`,
+        longPositions,
+        shortPositions,
+        stopLoss: 0,
+        takeProfit: 0,
+        createdAt: new Date(),
+      };
     }
 
     return NextResponse.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Chat request failed';
+    const errorMessage = error instanceof Error ? error.message : 'Modification request failed';
     return NextResponse.json(
       { success: false, error: errorMessage },
       { status: 500 }

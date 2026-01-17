@@ -1,52 +1,205 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
-import type { ChatMessage } from '@/types/trade';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import type { ChatMessage, TradeProposal, Position } from '@/types/trade';
 import { TradeProposalCard } from '../trade/TradeProposalCard';
+import { TradeModificationModal } from '../trade/TradeModificationModal';
 
-interface MessageHistoryProps {
-  messages: ChatMessage[];
-  onModify: (refinementMessage: string) => void;
+// Hook for typewriter effect
+function useTypewriter(text: string, speed: number = 10) {
+  const [displayedText, setDisplayedText] = useState('');
+  const [isComplete, setIsComplete] = useState(false);
+
+  useEffect(() => {
+    setDisplayedText('');
+    setIsComplete(false);
+    let index = 0;
+
+    const interval = setInterval(() => {
+      if (index < text.length) {
+        setDisplayedText(text.slice(0, index + 1));
+        index++;
+      } else {
+        setIsComplete(true);
+        clearInterval(interval);
+      }
+    }, speed);
+
+    return () => clearInterval(interval);
+  }, [text, speed]);
+
+  return { displayedText, isComplete };
 }
 
-export function MessageHistory({ messages, onModify }: MessageHistoryProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+/**
+ * Props for MessageHistory component
+ * Task 3.9: Updated to handle modal state and modification submission
+ */
+interface MessageHistoryProps {
+  messages: ChatMessage[];
+  /** Callback for text-based modification (legacy, kept for backwards compatibility) */
+  onModify: (refinementMessage: string) => void;
+  /** Callback for modal-based modification submission */
+  onModifySubmit?: (
+    proposalId: string,
+    longPositions: Position[],
+    shortPositions: Position[]
+  ) => Promise<void>;
+  isLoading?: boolean;
+}
 
-  // Auto-scroll to newest message (same pattern as TerminalOutput)
+/**
+ * MessageHistory component with trade modification modal support.
+ *
+ * Task 3.9 Updates:
+ * - Determine which proposal is latest (last message with tradeProposal)
+ * - Pass isLatest prop to TradeProposalCard
+ * - Handle modal open/close state
+ * - Wire modal save to sendModification function
+ */
+export function MessageHistory({
+  messages,
+  onModify: _onModify, // Kept for backwards compatibility, modal flow uses onModifySubmit
+  onModifySubmit,
+  isLoading,
+}: MessageHistoryProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [modalProposal, setModalProposal] = useState<TradeProposal | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Auto-scroll to newest message or thinking indicator
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
+  }, [messages, isLoading]);
+
+  /**
+   * Find the latest proposal ID (last message with tradeProposal)
+   */
+  const latestProposalId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].tradeProposal) {
+        return messages[i].tradeProposal!.id;
+      }
+    }
+    return null;
   }, [messages]);
+
+  /**
+   * Handle Modify button click - open modal for latest proposal
+   */
+  const handleModifyClick = useCallback(
+    (proposalId: string) => {
+      // Find the proposal in messages
+      const message = messages.find((m) => m.tradeProposal?.id === proposalId);
+      if (message?.tradeProposal) {
+        setModalProposal(message.tradeProposal);
+        setIsModalOpen(true);
+      }
+    },
+    [messages]
+  );
+
+  /**
+   * Handle modal close
+   */
+  const handleModalClose = useCallback(() => {
+    setIsModalOpen(false);
+    setModalProposal(null);
+  }, []);
+
+  /**
+   * Handle modal save
+   */
+  const handleModalSave = useCallback(
+    async (longPositions: Position[], shortPositions: Position[]) => {
+      if (!modalProposal || !onModifySubmit) return;
+
+      await onModifySubmit(modalProposal.id, longPositions, shortPositions);
+      handleModalClose();
+    },
+    [modalProposal, onModifySubmit, handleModalClose]
+  );
 
   if (messages.length === 0) {
     return null;
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-y-auto px-4 py-6 space-y-4"
-      style={{ maxHeight: 'calc(100vh - 200px)' }}
-    >
-      {messages.map((message) => (
-        <MessageBubble
-          key={message.id}
-          message={message}
-          onModify={onModify}
-        />
-      ))}
+    <>
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto px-4 py-6 space-y-4"
+        style={{ maxHeight: 'calc(100vh - 200px)' }}
+      >
+        {messages.map((message) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            onModify={handleModifyClick}
+            onModifySubmit={onModifySubmit}
+            isLatest={message.tradeProposal?.id === latestProposalId}
+          />
+        ))}
+        {isLoading && <ThinkingIndicator />}
+      </div>
+
+      {/* Trade Modification Modal */}
+      <TradeModificationModal
+        isOpen={isModalOpen}
+        proposal={modalProposal}
+        onClose={handleModalClose}
+        onSave={handleModalSave}
+      />
+    </>
+  );
+}
+
+function ThinkingIndicator() {
+  return (
+    <div className="flex justify-start">
+      <div className="bg-transparent text-[var(--foreground)] rounded-lg px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            <span className="w-2 h-2 bg-[var(--foreground)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 bg-[var(--foreground)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 bg-[var(--foreground)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+          <span className="text-sm text-[var(--muted-foreground)]">Thinking...</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 interface MessageBubbleProps {
   message: ChatMessage;
-  onModify: (refinementMessage: string) => void;
+  onModify: (proposalId: string) => void;
+  onModifySubmit?: (
+    proposalId: string,
+    longPositions: Position[],
+    shortPositions: Position[]
+  ) => Promise<void>;
+  isLatest: boolean;
 }
 
-function MessageBubble({ message, onModify }: MessageBubbleProps) {
+function MessageBubble({ message, onModify, onModifySubmit, isLatest }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const { displayedText, isComplete } = useTypewriter(
+    isUser ? '' : message.content,
+    10
+  );
+
+  const handleModifySubmit = useCallback(
+    async (longPositions: Position[], shortPositions: Position[]) => {
+      if (message.tradeProposal && onModifySubmit) {
+        await onModifySubmit(message.tradeProposal.id, longPositions, shortPositions);
+      }
+    },
+    [message.tradeProposal, onModifySubmit]
+  );
 
   return (
     <div
@@ -67,15 +220,34 @@ function MessageBubble({ message, onModify }: MessageBubbleProps) {
             fontSize: isUser ? '1rem' : '1.05rem',
           }}
         >
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : (
+            <div className="prose prose-invert prose-sm max-w-none">
+              <ReactMarkdown
+                components={{
+                  h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2">{children}</h3>,
+                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                  ul: ({ children }) => <ul className="list-disc list-inside my-2">{children}</ul>,
+                  li: ({ children }) => <li className="my-1">{children}</li>,
+                  p: ({ children }) => <p className="my-2">{children}</p>,
+                }}
+              >
+                {displayedText}
+              </ReactMarkdown>
+              {!isComplete && <span className="animate-pulse">|</span>}
+            </div>
+          )}
         </div>
 
         {/* Trade proposal card (only for assistant messages with proposals) */}
-        {!isUser && message.tradeProposal && (
+        {!isUser && message.tradeProposal && isComplete && (
           <div className="mt-3">
             <TradeProposalCard
               proposal={message.tradeProposal}
               onModify={onModify}
+              onModifySubmit={handleModifySubmit}
+              isLatest={isLatest}
             />
           </div>
         )}
