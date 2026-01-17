@@ -166,6 +166,148 @@ if (!result.success) {
 
 ---
 
+## 🔧 Technical Architecture: Salt + HyperEVM Integration
+
+### System Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACE                               │
+│  (Next.js Dashboard - Trade, Vault, Agent, Guardians pages)        │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SALT POLICY LAYER                              │
+│  src/salt/policies.ts      │  src/salt/gatedActions.ts              │
+│  ─────────────────────────   ─────────────────────────              │
+│  • DepositPolicy           │  • gatedDeposit()                      │
+│  • RebalancePolicy         │  • gatedRebalance()                    │
+│  • OBOrderPolicy           │  • gatedOBOrder()                      │
+│  • PolicyValidator         │                                        │
+│                            │  ↓ VALIDATES before execution          │
+└────────────────────────────┼────────────────────────────────────────┘
+                             │
+          ┌──────────────────┴──────────────────┐
+          │                                     │
+          ▼                                     ▼
+┌─────────────────────────┐         ┌─────────────────────────────────┐
+│   HYPEREVM CONTRACTS    │         │      OFF-CHAIN EXECUTOR         │
+│   (On-chain)            │         │      src/executor/index.ts      │
+│   ─────────────────────  │         │      ─────────────────────────  │
+│   MonsoonALM:           │◄────────┤   • Listens for AllocateToOB   │
+│   • deposit()           │  events │   • Places orders on HyperCore  │
+│   • withdraw()          │         │   • Uses Salt OBOrderPolicy     │
+│   • allocateToOB()      │         │                                 │
+│   • deallocateFromOB()  │         │                                 │
+│                         │         │                                 │
+│   HyperCoreQuoter:      │         └─────────────────────────────────┘
+│   • getMidPrice() ◄─────┼─── Calls HyperCore precompile (0x800)
+│                         │
+└─────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    HYPERCORE NATIVE ORDERBOOK                       │
+│         (Hyperliquid's L1 - accessed via precompile)               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Component Responsibilities
+
+| Component | Layer | Responsibility |
+|-----------|-------|----------------|
+| **Salt Policies** | Off-chain | Define limits (max deposit, max allocation %, spreads) |
+| **Gated Actions** | Off-chain | Validate actions BEFORE sending to chain |
+| **Wagmi Hooks** | Off-chain | `useDeposit()`, `useAllocateToOB()` contract calls |
+| **MonsoonALM** | On-chain | Execute deposits, emit events, manage liquidity |
+| **HyperCoreQuoter** | On-chain | Call precompile `0x800` for live prices |
+| **OB Executor** | Off-chain | Listen to events, place orders on HyperCore |
+
+### Flow Example: Salt-Gated Deposit
+
+```typescript
+// 1. User clicks "Deposit" in UI
+// 2. Salt validates the action BEFORE sending to chain:
+
+const result = await gatedDeposit(
+  parseUnits("1000", 6),           // amount
+  TOKEN0_ADDRESS,                   // token
+  async () => {
+    // 3. Only if Salt approves, execute on HyperEVM:
+    return deposit(amount0, amount1, recipient);
+  }
+);
+
+if (!result.success) {
+  // Salt blocked it - show denial in UI
+  console.log("Blocked:", result.validationResult.reason);
+  // Reason: "Amount exceeds max per transaction (100000)"
+}
+```
+
+### Flow Example: Rebalance → OB Order
+
+```
+┌─────────┐    ┌───────────┐    ┌─────────────┐    ┌──────────────┐
+│Strategist│───▶│   Salt    │───▶│ MonsoonALM  │───▶│  Executor   │
+│   UI     │    │ Validates │    │ allocateToOB│    │ Places Order│
+└─────────┘    └───────────┘    └─────────────┘    └──────────────┘
+     │              │                   │                  │
+     │   maxAlloc   │    emit event     │   validate       │
+     │   cooldown   │                   │   OBOrderPolicy  │
+     │              │                   │                  │
+                                        ▼                  ▼
+                                 ┌─────────────────────────────┐
+                                 │   HyperCore Orderbook       │
+                                 │   (Native L1 matching)      │
+                                 └─────────────────────────────┘
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/salt/policies.ts` | Policy definitions (DepositPolicy, RebalancePolicy, OBOrderPolicy) |
+| `src/salt/gatedActions.ts` | Wrapper functions that validate before execution |
+| `src/lib/contracts/hooks.ts` | Wagmi hooks for contract interactions |
+| `src/executor/index.ts` | Event listener + order placement service |
+| `contracts/src/MonsoonALM.sol` | Core vault with OB allocation logic |
+| `contracts/src/HyperCoreQuoter.sol` | Precompile wrapper for HyperCore prices |
+
+### HyperCore Price Integration
+
+The `HyperCoreQuoter` contract calls HyperCore's native precompile at address `0x800`:
+
+```solidity
+// contracts/src/HyperCoreQuoter.sol
+function getMidPrice() external view returns (uint256) {
+    // Try native HyperCore precompile first
+    (bool success, bytes memory data) = HYPERCORE_PRECOMPILE.staticcall(
+        abi.encodeWithSelector(IHyperCoreRead.getMidPriceForMarket.selector, ASSET_INDEX)
+    );
+    
+    if (success && data.length >= 32) {
+        return abi.decode(data, (uint256));
+    }
+    
+    // Fallback to off-chain updated price
+    return fallbackPrice;
+}
+```
+
+This provides **zero-oracle pricing** by reading directly from Hyperliquid's L1 orderbook state.
+
+### Summary
+
+| Module | Role |
+|--------|------|
+| **Salt** | Off-chain policy enforcement (prevents bad actions) |
+| **HyperEVM** | On-chain execution (deposits, allocations) |
+| **HyperCore** | Native orderbook (price discovery, order matching) |
+| **Executor** | Bridge between on-chain events and orderbook orders |
+
+
 ## 🧪 Testing
 
 ### Smart Contract Tests
