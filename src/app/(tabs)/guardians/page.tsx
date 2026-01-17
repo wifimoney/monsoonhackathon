@@ -327,6 +327,177 @@ export default function GuardiansPage() {
                 onReset={handleResetLoss}
             />
 
+            {/* Robo Manager presets */}
+            <section className="space-y-4">
+                <div>
+                    <h3 className="text-xl font-semibold">Strategies as “Robo Manager presets”</h3>
+                    <p className="text-[var(--muted)] text-sm mt-1">
+                        Map Salt policies to judge-friendly strategy presets with clear guardrails and demos.
+                    </p>
+                </div>
+
+                <div className="card space-y-3">
+                    <h4 className="text-sm font-semibold text-white">Preset strategies you can ship</h4>
+                    <ul className="grid gap-2 text-sm text-[var(--muted)]">
+                        <li>• Basis/funding arb guardrail: only execute if funding &gt; X and exposure &lt; Y.</li>
+                        <li>• Auto-hedge delta: only hedge within max leverage and max spend.</li>
+                        <li>• Market hours mode: block all trades outside time window.</li>
+                        <li>• Drawdown stop: freeze automation if PnL drops below threshold.</li>
+                    </ul>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="card space-y-3">
+                        <div>
+                            <h4 className="text-sm font-semibold text-white">1) Basis / Funding Arb Guardrail</h4>
+                            <p className="text-xs text-[var(--muted)] mt-1">
+                                Goal: run a market-neutral funding/basis strategy only when conditions are favorable.
+                            </p>
+                        </div>
+                        <div className="text-xs text-[var(--muted)] space-y-2">
+                            <div>
+                                <p className="font-semibold text-white/80">Inputs</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Funding rate (perp)</li>
+                                    <li>Spot–perp basis (optional)</li>
+                                    <li>Current exposure + notional in the strategy</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Salt policies to enforce</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Max leverage (≤ 3x)</li>
+                                    <li>Max notional exposure per asset (≤ $1,000 GOLD)</li>
+                                    <li>Max spend per tx (≤ $250)</li>
+                                    <li>Trades/day + cooldown (prevents spam / runaway loops)</li>
+                                    <li>Allowlist: only specific markets/contracts (GOLD-USDH, OIL-USDH)</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Decision rule</p>
+                                <p>
+                                    Execute only if fundingRate ≥ X (e.g., 0.01%/8h) and basis within band and exposure
+                                    &lt; cap.
+                                </p>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Demo</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Toggle preset on → show “Eligible ✅” and execute a tiny hedge pair.</li>
+                                    <li>Change X so it fails → attempt execution → policy denied.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card space-y-3">
+                        <div>
+                            <h4 className="text-sm font-semibold text-white">2) Auto-Hedge Delta</h4>
+                            <p className="text-xs text-[var(--muted)] mt-1">
+                                Goal: keep net exposure close to neutral while liquidity is deployed.
+                            </p>
+                        </div>
+                        <div className="text-xs text-[var(--muted)] space-y-2">
+                            <div>
+                                <p className="font-semibold text-white/80">Inputs</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Net position delta (from Hyperliquid positions)</li>
+                                    <li>Spot inventory (vault inventory)</li>
+                                    <li>Optional: volatility / price move threshold</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Salt policies to enforce</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Max hedge size per action (max spend / max notional)</li>
+                                    <li>Max leverage on hedge leg</li>
+                                    <li>Allowed instruments (approved perp market)</li>
+                                    <li>Trading hours (optional)</li>
+                                    <li>Circuit breaker if repeated hedges trigger too often</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Decision rule</p>
+                                <p>If abs(delta) &gt; threshold (e.g., &gt; $50 notional), propose hedge.</p>
+                                <p>Hedge size clamps to policy limits.</p>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Demo</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Simulate delta drift → propose hedge.</li>
+                                    <li>Try to hedge 10x beyond cap → denied by Salt policies.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card space-y-3">
+                        <div>
+                            <h4 className="text-sm font-semibold text-white">3) Market Hours Mode</h4>
+                            <p className="text-xs text-[var(--muted)] mt-1">
+                                Goal: prevent execution during illiquid / risky hours or when “hands-off”.
+                            </p>
+                        </div>
+                        <div className="text-xs text-[var(--muted)] space-y-2">
+                            <div>
+                                <p className="font-semibold text-white/80">Salt policies to enforce</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Trading hours window (e.g., 08:00–22:00 UTC)</li>
+                                    <li>Optional: weekend lock</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Decision rule</p>
+                                <p>Outside window: all execute actions denied (trades, OB deploys, rebalances).</p>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Demo</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Set the window so you’re “outside” → attempt action → denied.</li>
+                                    <li>Expand window → same action passes.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card space-y-3">
+                        <div>
+                            <h4 className="text-sm font-semibold text-white">4) Drawdown Stop (Circuit Breaker)</h4>
+                            <p className="text-xs text-[var(--muted)] mt-1">
+                                Goal: automation shuts off when things go bad.
+                            </p>
+                        </div>
+                        <div className="text-xs text-[var(--muted)] space-y-2">
+                            <div>
+                                <p className="font-semibold text-white/80">Inputs</p>
+                                <ul className="list-disc list-inside">
+                                    <li>PnL (from Hyperliquid account / strategy ledger)</li>
+                                    <li>Peak-to-trough drawdown tracking</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Salt policies to enforce</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Freeze trading if drawdown &gt; X% or $X</li>
+                                    <li>Optional: require manual re-enable after freeze</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Decision rule</p>
+                                <p>If drawdown ≤ -X → set accountStatus = PAUSED and deny all future execute actions.</p>
+                            </div>
+                            <div>
+                                <p className="font-semibold text-white/80">Demo</p>
+                                <ul className="list-disc list-inside">
+                                    <li>Mock a negative PnL / drawdown event → system flips to PAUSED.</li>
+                                    <li>Try any action → denied: circuit breaker engaged.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             {/* Footer note */}
             <div className="text-center text-xs text-[var(--muted)] pt-4 border-t border-[var(--card-border)]">
                 <p>
