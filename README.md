@@ -14,7 +14,7 @@ Monsoon enables users to trade via natural language ("Buy $100 ETH") while enfor
 
 ### 2. 💧 Sovereign ALM (Valantis)
 A custom Automated Liquidity Manager (ALM) built on Valantis Sovereign Pools that intelligently routes liquidity.
-- **Dynamic Pricing**: Calculates Bid/Ask spreads based on inventory skew and real-time oracle data (`HyperCoreQuoter`).
+- **Dynamic Pricing**: Calculates Bid/Ask spreads based on inventory skew and real-time oracle data via the `HyperCoreQuoter`.
 - **Yield Allocation**: Automatically routes idle capital to yield-bearing strategies (Mocked Chorus One/Aave adapters) to maximize efficiency.
 - **Orderbook Integration**: Emits `AllocateToOB` events to sync on-chain reserves with off-chain CLOB orders.
 
@@ -24,6 +24,8 @@ A TypeScript-based service that listens to on-chain ALM events and mirrors them 
 ---
 
 ## 🏗️ System Architecture
+
+### High-Level Flow
 
 ```mermaid
 graph TD
@@ -49,9 +51,71 @@ graph TD
     Executor -->|Place Order| HL
 ```
 
+### Component Integration (Salt + HyperEVM)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACE                               │
+│  (Next.js Dashboard - Trade, Vault, Agent, Guardians pages)        │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SALT POLICY LAYER                              │
+│  src/salt/policies.ts      │  src/salt/gatedActions.ts              │
+│  ─────────────────────────   ─────────────────────────              │
+│  • DepositPolicy           │  • gatedDeposit()                      │
+│  • RebalancePolicy         │  • gatedRebalance()                    │
+│  • OBOrderPolicy           │  • gatedOBOrder()                      │
+│  • PolicyValidator         │                                        │
+│                            │  ↓ VALIDATES before execution          │
+└────────────────────────────┼────────────────────────────────────────┘
+                             │
+          ┌──────────────────┴──────────────────┐
+          │                                     │
+          ▼                                     ▼
+┌─────────────────────────┐         ┌─────────────────────────────────┐
+│   HYPEREVM CONTRACTS    │         │      OFF-CHAIN EXECUTOR         │
+│   (On-chain)            │         │      src/executor/index.ts      │
+│   ─────────────────────  │         │      ─────────────────────────  │
+│   MonsoonALM:           │◄────────┤   • Listens for AllocateToOB   │
+│   • deposit()           │  events │   • Places orders on HyperCore  │
+│   • withdraw()          │         │   • Uses Salt OBOrderPolicy     │
+│   • allocateToOB()      │         │                                 │
+│   • deallocateFromOB()  │         │                                 │
+│                         │         │                                 │
+│   HyperCoreQuoter:      │         └─────────────────────────────────┘
+│   • getMidPrice() ◄─────┼─── Calls HyperCore precompile (0x800)
+│                         │
+└─────────────────────────┘
+```
+
 ---
 
-## 🛠️ Setup & Installation
+## � Security Model
+
+### Salt Policy Layers
+
+| Layer | Enforcement | Purpose |
+|-------|-------------|---------|
+| **Deposit Policy** | Max per-tx, daily limits | Prevent oversized deposits |
+| **Rebalance Policy** | Max allocation %, cooldowns | Prevent aggressive OB exposure |
+| **OB Order Policy** | Spread limits, size caps | Prevent market manipulation |
+| **Agent Policy** | Max Spend ($250), Venue | Prevent autonomous agent errors |
+
+### Gated Actions
+All sensitive operations go through Salt validation off-chain before on-chain execution or API calls:
+
+```typescript
+const result = await GuardianService.validateTradeRequest(request);
+if (!result.success) {
+  return NextResponse.json({ error: "Policy Violation" }, { status: 403 });
+}
+```
+
+---
+
+## �🛠️ Setup & Installation
 
 ### Prerequisites
 - Node.js v20+
@@ -90,27 +154,39 @@ npx tsx src/executor/index.ts
 
 ---
 
-## 📜 Contract Addresses (Arbitrum Sepolia)
+## 📜 Deployed Addresses (Arbitrum Sepolia)
 
-| Contract | Address |
-|----------|---------|
-| **MonsoonALM** | `0x63825fb627b0e85b2f70a3b42fe530c7e6d72498` |
-| **SovereignPool** | `0x82b785a3ab55772c88381c4387083399422cdfcd` |
-| **HyperCoreQuoter** | `0x37f4e2a0a4a59f2a0405c4e539a39d90cf355d84` |
-| **Token0 (mUSDC)** | `0xaa6a7b7faa7f28566fe5c3cfc628a1ee0583a0ba` |
-| **Token1 (mWETH)** | `0xe4e118a0b252a631b19789d84f504b10167466e2` |
+| Contract | Address | Description |
+|----------|---------|-------------|
+| **MonsoonALM** | `0x63825fb627b0e85b2f70a3b42fe530c7e6d72498` | Main liquidity module |
+| **SovereignPool** | `0x82b785a3ab55772c88381c4387083399422cdfcd` | Valantis AMM pool |
+| **HyperCoreQuoter** | `0x37f4e2a0a4a59f2a0405c4e539a39d90cf355d84` | Price oracle from HyperCore |
+| **MockFactory** | `0x2746977b2921af42984f7d7f64597890d6e7f351` | Pool factory |
+| **Token0 (mUSDC)** | `0xaa6a7b7faa7f28566fe5c3cfc628a1ee0583a0ba` | Mock USDC |
+| **Token1 (mWETH)** | `0xe4e118a0b252a631b19789d84f504b10167466e2` | Mock WETH |
 
 ---
 
-## 🧪 Verification
+## 📁 Project Structure
 
-### Verify Guardrails
-Run the included script to test safety policies:
-```bash
-./verify_guardrails.sh
 ```
-*   **Normal Trade ($100)**: Should PASS.
-*   **Volatile Trade ($300)**: Should be BLOCKED by Salt Policy.
+monsoonhackathon/
+├── contracts/                    # Foundry smart contracts
+│   ├── src/
+│   │   ├── MonsoonALM.sol       # Core liquidity module
+│   │   ├── HyperCoreQuoter.sol  # Price oracle
+│   │   └── interfaces/          # Contract interfaces
+│
+├── src/
+│   ├── app/                      # Next.js app router
+│   │   ├── dashboard/            # Dashboard pages
+│   │   └── api/                  # API routes (Agent + Pear)
+│   ├── components/               # React components
+│   ├── lib/
+│   │   ├── contracts/            # ABIs, addresses, wagmi hooks
+│   │   └── guardian-service.ts   # Salt Policy Middleware
+│   ├── executor/                 # OB executor service
+```
 
 ---
 
