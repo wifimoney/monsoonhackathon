@@ -1,12 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract, getChainId, getPublicClient } from '@wagmi/core';
 import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
 import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche } from 'viem/chains';
-import { allChains } from '@/lib/wagmi';
-import { wagmiConfig } from '@/lib/wagmi';
+import { wagmiConfig, allChains } from '@/lib/wagmi';
 import { parseUnits } from 'viem';
 
 // Use viem chain definitions - get hyperEvm from wagmi config
@@ -66,6 +65,18 @@ const ASSETS: Record<number, { symbol: string; name: string; address: string; de
     999: [
         { symbol: 'USDC', name: 'USD Coin', address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f', decimals: 6 },
     ],
+};
+
+// Map chain IDs to LiFi chain identifiers
+const LIFI_CHAIN_MAP: Record<number, string> = {
+    1: 'eth',           // Ethereum
+    42161: 'arb1',      // Arbitrum One
+    10: 'ope',          // Optimism
+    137: 'pol',         // Polygon
+    8453: 'bas',        // Base
+    56: 'bsc',          // BSC
+    43114: 'ava',       // Avalanche
+    999: '999',         // HyperEVM (using chain ID directly)
 };
 
 // Convert human-readable amount to token amount with decimals
@@ -192,11 +203,111 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [showDepositAfterBridge, setShowDepositAfterBridge] = useState(false); // Show deposit option after bridge
     const [progressStep, setProgressStep] = useState<number>(0); // 0 = not started, 1, 2, 3 = steps
     const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
+    const [showDepositDropdown, setShowDepositDropdown] = useState(false); // Deposit dropdown visibility
+    const [estimatedReceivedAmount, setEstimatedReceivedAmount] = useState<string>(''); // Estimated USDC received from LiFi route
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
     const selectedAssetData = availableAssets.find((a) => a.symbol === selectedAsset);
     const isHyperEVMSelected = selectedChain === HYPEREVM.chainId;
+
+    // Calculate estimated received amount when amount/chain/asset changes (for cross-chain exchange)
+    useEffect(() => {
+        const calculateEstimatedAmount = async () => {
+            // Only calculate for cross-chain exchanges (not HyperEVM direct deposits)
+            if (isHyperEVMSelected || !selectedChain || !selectedAsset || !amount || !address) {
+                setEstimatedReceivedAmount('');
+                return;
+            }
+
+            const amountNum = parseFloat(amount);
+            if (isNaN(amountNum) || amountNum <= 0) {
+                setEstimatedReceivedAmount('');
+                return;
+            }
+
+            try {
+                const assetData = ASSETS[selectedChain]?.find((a) => a.symbol === selectedAsset);
+                if (!assetData?.address) {
+                    setEstimatedReceivedAmount('');
+                    return;
+                }
+
+                // Get LiFi chain identifiers for token endpoint (uses string identifiers)
+                const toChainIdForToken = LIFI_CHAIN_MAP[HYPEREVM.chainId] || HYPEREVM.chainId.toString();
+
+                // Get token info from LiFi API to verify decimals
+                const fromTokenAddress = assetData.address === '0x0000000000000000000000000000000000000000' 
+                    ? 'native' 
+                    : assetData.address.toLowerCase();
+                const toTokenAddress = HYPEREVM.usdcAddress.toLowerCase();
+
+                // Fetch token info for destination USDC to get decimals using token API
+                let toTokenDecimals = 6; // Default USDC decimals
+                try {
+                    const tokenResponse = await fetch(
+                        `https://li.quest/v1/token?chain=${toChainIdForToken}&token=${toTokenAddress}`
+                    );
+                    if (tokenResponse.ok) {
+                        const tokenData = await tokenResponse.json();
+                        if (tokenData?.decimals) {
+                            toTokenDecimals = tokenData.decimals;
+                        }
+                    }
+                } catch (tokenError) {
+                    console.warn('[CrossChainExchange] Could not fetch token info, using default decimals:', tokenError);
+                }
+
+                // Convert amount to token units (as string for API)
+                const tokenAmount = parseTokenAmount(amount, assetData.decimals);
+
+                // Fetch quote from LiFi API to get estimated received amount
+                // Quote endpoint uses numeric chain IDs (same as SDK)
+                const quoteParams = new URLSearchParams({
+                    fromChain: selectedChain.toString(),
+                    toChain: HYPEREVM.chainId.toString(),
+                    fromToken: fromTokenAddress,
+                    toToken: toTokenAddress,
+                    fromAmount: tokenAmount,
+                    fromAddress: address || '',
+                    slippage: '0.03', // 3% slippage tolerance
+                });
+
+                const quoteResponse = await fetch(`https://li.quest/v1/quote?${quoteParams.toString()}`);
+                
+                if (!quoteResponse.ok) {
+                    throw new Error(`LiFi API error: ${quoteResponse.status} ${quoteResponse.statusText}`);
+                }
+
+                const quoteData = await quoteResponse.json();
+
+                // Extract estimated received amount from quote response
+                // The estimate.toAmount is in smallest units (raw amount)
+                if (quoteData?.estimate?.toAmount) {
+                    const toAmountRaw = quoteData.estimate.toAmount.toString();
+                    const estimatedAmount = formatTokenAmount(toAmountRaw, toTokenDecimals);
+                    setEstimatedReceivedAmount(estimatedAmount);
+                } else if (quoteData?.toAmount) {
+                    // Fallback: check root-level toAmount
+                    const toAmountRaw = quoteData.toAmount.toString();
+                    const estimatedAmount = formatTokenAmount(toAmountRaw, toTokenDecimals);
+                    setEstimatedReceivedAmount(estimatedAmount);
+                } else {
+                    setEstimatedReceivedAmount('');
+                }
+            } catch (error) {
+                console.error('[CrossChainExchange] Error calculating estimated amount:', error);
+                setEstimatedReceivedAmount('');
+            }
+        };
+
+        // Debounce the calculation
+        const timeoutId = setTimeout(() => {
+            calculateEstimatedAmount();
+        }, 500); // Wait 500ms after user stops typing
+
+        return () => clearTimeout(timeoutId);
+    }, [amount, selectedChain, selectedAsset, address, isHyperEVMSelected]);
 
     const handleChainSelect = (chainId: number) => {
         setSelectedChain(chainId);
@@ -299,68 +410,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             
             if (currentChainId !== HYPEREVM.chainId) {
                 console.log(`[Deposit] Switching to HyperEVM network...`);
-                console.log(`[Deposit] Current chain: ${currentChainId}, Target: ${HYPEREVM.chainId}`);
-                try {
-                    // Switch chain using wagmi core function - this will prompt the user
-                    await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
-                    console.log(`[Deposit] Chain switch requested. Waiting for user approval...`);
-                    
-                    // Wait for the chain switch to complete by polling the wallet client's chain ID
-                    // This is more reliable than getChainId which might use cached state
-                    let attempts = 0;
-                    const maxAttempts = 60; // 30 seconds max wait (user needs time to approve)
-                    let switched = false;
-                    
-                    while (attempts < maxAttempts && !switched) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        try {
-                            // Get wallet client and check its chain ID directly
-                            const walletClient = await getWalletClient(wagmiConfig);
-                            if (walletClient) {
-                                const walletChainId = await walletClient.getChainId();
-                                console.log(`[Deposit] Polling chain switch... Attempt ${attempts + 1}/${maxAttempts}, Current chain: ${walletChainId}`);
-                                if (walletChainId === HYPEREVM.chainId) {
-                                    console.log(`[Deposit] Successfully switched to HyperEVM (chain ID: ${walletChainId})`);
-                                    switched = true;
-                                    break;
-                                }
-                            }
-                        } catch (e) {
-                            // Wallet client might not be available yet, continue waiting
-                            console.log(`[Deposit] Waiting for chain switch... (${attempts + 1}/${maxAttempts})`);
-                        }
-                        attempts++;
-                    }
-                    
-                    // Final verification - check wallet client directly
-                    if (!switched) {
-                        const finalWalletClient = await getWalletClient(wagmiConfig);
-                        const finalChainId = finalWalletClient ? await finalWalletClient.getChainId() : await getChainId(wagmiConfig);
-                        console.error(`[Deposit] Chain switch failed. Final chain ID: ${finalChainId}, Expected: ${HYPEREVM.chainId}`);
-                        throw new Error(`Chain switch incomplete. Current chain: ${finalChainId}, Expected: ${HYPEREVM.chainId}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) in your wallet and try again.`);
-                    }
-                    
-                    // Small delay to ensure state propagation
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    
-                    // One more verification after delay
-                    const verifyWalletClient = await getWalletClient(wagmiConfig);
-                    if (verifyWalletClient) {
-                        const verifyChainId = await verifyWalletClient.getChainId();
-                        if (verifyChainId !== HYPEREVM.chainId) {
-                            throw new Error(`Chain switch verification failed. Current chain: ${verifyChainId}, Expected: ${HYPEREVM.chainId}. Please ensure you're on HyperEVM in your wallet.`);
-                        }
-                        console.log(`[Deposit] Chain switch verified: ${verifyChainId}`);
-                    }
-                } catch (error: any) {
-                    console.error(`[Deposit] Failed to switch chain:`, error);
-                    if (error.message?.includes('User rejected') || error.message?.includes('rejected')) {
-                        throw new Error('Chain switch was rejected. Please switch to HyperEVM (Chain ID: 999) manually in your wallet and try again.');
-                    }
-                    throw new Error(`Failed to switch to HyperEVM network: ${error.message || 'Unknown error'}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) manually in your wallet.`);
-                }
-            } else {
-                console.log(`[Deposit] Already on HyperEVM (chain ID: ${currentChainId})`);
+                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
             }
 
             // Convert amount to token units
@@ -1204,12 +1254,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="flex-1 text-2xl font-bold text-[var(--muted)]">
-                                    {amount ? '~' + amount : '0.0'}
+                                    {estimatedReceivedAmount || (amount ? '~' + amount : '0.0')}
                                 </div>
                                 <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
                                     USDC
                                 </div>
                             </div>
+                            {estimatedReceivedAmount && amount && parseFloat(amount) > 0 && (
+                                <div className="text-xs text-[var(--muted)] mt-1">
+                                    Estimated amount after fees and exchange rate
+                                </div>
+                            )}
                         </div>
 
                                 {/* Destination Selection: Spot or Perps for cross-chain deposits */}
