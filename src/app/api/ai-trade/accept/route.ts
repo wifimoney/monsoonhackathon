@@ -134,9 +134,16 @@ async function executePearTrade(
     }
 
     const data = JSON.parse(responseText);
+
+    // Check if all legs were executed
+    const fills = data.fills || [];
+    const filledAssets = new Set(fills.map((f: { coin: string }) => f.coin));
+
     return {
       success: true,
       positionId: data.positionId || data.orderId,
+      fills: fills,
+      filledAssets: Array.from(filledAssets),
     };
   } catch (error) {
     console.error('executePearTrade error:', error);
