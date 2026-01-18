@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { Position } from '@/types/trade';
+import { GuardianService } from '@/lib/guardian-service';
 
 /**
  * Request body for accepting a trade
@@ -204,6 +205,30 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // =================================================================
+    // Task 3: Salt Guardian Policy Check
+    // =================================================================
+    console.log(`Checking Salt Guardians for trade: ${positionSizeUsd} USD`);
+    const policyResult = await GuardianService.validateTradeRequest({
+      symbol: 'PORTFOLIO_TRADE', // Generic symbol for multi-asset basket
+      size: positionSizeUsd,
+      side: 'BUY', // Assuming net long or just strictly size check for now
+      leverage: leverageValue
+    });
+
+    if (!policyResult.success) {
+      console.error('Salt Policy Violation:', policyResult.reason);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Policy Violation: ${policyResult.reason}`,
+          denials: policyResult.denials
+        },
+        { status: 403 }
+      );
+    }
+    console.log('✅ Salt Guardians Passed');
 
     // Convert trade proposal to Pear format
     const pearPayload = convertToPearFormat(longPositions, shortPositions, positionSizeUsd, leverageValue);

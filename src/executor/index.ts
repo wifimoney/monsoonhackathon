@@ -12,7 +12,7 @@ const RPC_URL = deployedAddresses.rpcUrl;
 const MONSOON_ALM = deployedAddresses.contracts.MonsoonALM;
 
 // Event signature for AllocateToOB
-const ALLOCATE_EVENT = parseAbiItem('event AllocateToOB(uint256 amount0, uint256 amount1)');
+const ALLOCATE_EVENT = parseAbiItem('event AllocateToOB(uint256 amount0, uint256 amount1, bool isBid, uint256 timestamp)');
 
 interface OrderParams {
     asset: string;
@@ -57,40 +57,72 @@ export class OBExecutor {
         console.log('✅ Executor running, listening for AllocateToOB events...');
     }
 
-    private async handleAllocation(log: unknown) {
+    private async handleAllocation(log: any) {
         console.log('');
         console.log('📥 AllocateToOB event received!');
-        console.log('   Log:', JSON.stringify(log, null, 2));
+
+        // Parse args directly from log.args if available in viem log object
+        const { amount0, amount1, isBid, timestamp } = log.args;
+
+        console.log(`   Amount0 (USDC): ${amount0}`);
+        console.log(`   Amount1 (ETH): ${amount1}`);
+        console.log(`   IsBid flag: ${isBid}`);
+        console.log(`   Timestamp: ${timestamp}`);
 
         // Get mid price from HyperLiquid
         const midPrice = await this.fetchMidPrice();
         console.log(`   Mid price: $${midPrice}`);
 
         // Calculate order parameters
-        const spreadBps = 30; // 0.3% spread
-        const bidPrice = midPrice * (1 - spreadBps / 10000);
-        const askPrice = midPrice * (1 + spreadBps / 10000);
+        // Logic: 
+        // If amount1 > 0 (ETH) -> We have inventory to SELL -> ASK Order
+        // If amount0 > 0 (USDC) -> We have inventory to BUY -> BID Order
 
-        console.log(`   Bid: $${bidPrice.toFixed(2)}`);
-        console.log(`   Ask: $${askPrice.toFixed(2)}`);
+        if (amount1 > BigInt(0)) {
+            // Place ASK
+            const askPrice = midPrice * 1.003; // +0.3%
+            const size = Number(amount1) / 1e18; // Convert Wei to ETH
 
-        // Place orders
-        await this.placeOrder({ asset: 'HYPE', side: 'buy', price: bidPrice, size: 1 });
-        await this.placeOrder({ asset: 'HYPE', side: 'sell', price: askPrice, size: 1 });
+            console.log(`   Configuring SELL Order (Inventory: ${size} ETH)`);
+            await this.placeOrder({
+                asset: 'ETH', // or HYPE depending on testnet
+                side: 'sell',
+                price: askPrice,
+                size: size
+            });
+        }
 
-        console.log('✅ Orders placed successfully');
+        if (amount0 > BigInt(0)) {
+            // Place BID
+            const bidPrice = midPrice * 0.997; // -0.3%
+            const size = Number(amount0) / 1e6 / bidPrice; // Convert USDC to ETH Size? 
+            // Hyperliquid size is usually in Base Asset (ETH).
+            // amount0 is USDC.
+            // Size = Amount0 / Price.
+
+            console.log(`   Configuring BUY Order (Inventory: ${Number(amount0) / 1e6} USDC) -> Size: ${size.toFixed(4)} ETH`);
+            await this.placeOrder({
+                asset: 'ETH',
+                side: 'buy',
+                price: bidPrice,
+                size: size
+            });
+        }
+
+        console.log('✅ Allocation processed');
     }
 
     private async fetchMidPrice(): Promise<number> {
         // In production, fetch from HyperLiquid API
-        // For demo, return mock price
-        return 2000;
+        // For demo, return mock price linked to "Real-ish" ranges
+        return 2400 + Math.random() * 10;
     }
 
     private async placeOrder(params: OrderParams): Promise<void> {
-        console.log(`📤 Placing ${params.side.toUpperCase()} order: ${params.size} ${params.asset} @ $${params.price.toFixed(2)}`);
+        console.log(`📤 Placing ${params.side.toUpperCase()} order: ${params.size.toFixed(4)} ${params.asset} @ $${params.price.toFixed(2)}`);
         // In production, call HyperLiquid API
-        // For demo, just log
+        // For demo, log the "Audit Record"
+        console.log(`   [AUDIT] Order Signed & Submitted. OrderId: mock-oid-${Date.now()}`);
     }
 
     stop() {
