@@ -78,8 +78,7 @@ export async function POST(request: Request) {
         let amount0 = BigInt(0);
         let amount1 = BigInt(0);
 
-        if (tokenAddress.toLowerCase() === DEPLOYED.tokens.TOKEN0.address.toLowerCase() ||
-            tokenAddress.toLowerCase() === HYPEREVM.USDC_TESTNET.toLowerCase()) {
+        if (tokenAddress.toLowerCase() === DEPLOYED.tokens.TOKEN0.address.toLowerCase()) {
             amount0 = amountBig;
         } else if (tokenAddress.toLowerCase() === DEPLOYED.tokens.TOKEN1.address.toLowerCase()) {
             amount1 = amountBig;
