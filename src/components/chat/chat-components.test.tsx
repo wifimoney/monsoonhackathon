@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { ChatInput } from './ChatInput';
 import { MessageHistory } from './MessageHistory';
 import { StarterPrompts } from './StarterPrompts';
@@ -45,11 +46,11 @@ describe('UI Components', () => {
   describe('MessageHistory', () => {
     it('should render user messages right-aligned and AI messages left-aligned', () => {
       const messages: ChatMessage[] = [
-        { role: 'user', content: 'I think BTC will go up' },
-        { role: 'assistant', content: 'Here is my analysis...' },
+        { id: '1', role: 'user', content: 'I think BTC will go up' },
+        { id: '2', role: 'assistant', content: 'Here is my analysis...' },
       ];
 
-      render(<MessageHistory messages={messages} onModify={() => {}} />);
+      render(<MessageHistory messages={messages} onModify={() => { }} />);
 
       const userMessage = screen.getByText('I think BTC will go up');
       const aiMessage = screen.getByText('Here is my analysis...');
@@ -83,21 +84,21 @@ describe('UI Components', () => {
         createdAt: new Date(),
       };
 
-      render(<TradeProposalCard proposal={proposal} onModify={() => {}} />);
+      render(<TradeProposalCard proposal={proposal} onModify={() => { }} />);
 
       // Check LONG section exists with accent color
       const longSection = screen.getByTestId('long-section');
       expect(longSection).toBeTruthy();
       expect(longSection.classList.contains('border-accent') ||
-             longSection.style.borderColor === 'var(--accent)' ||
-             longSection.querySelector('[class*="accent"]')).toBeTruthy();
+        longSection.style.borderColor === 'var(--accent)' ||
+        longSection.querySelector('[class*="accent"]')).toBeTruthy();
 
       // Check SHORT section exists with danger color
       const shortSection = screen.getByTestId('short-section');
       expect(shortSection).toBeTruthy();
       expect(shortSection.classList.contains('border-danger') ||
-             shortSection.style.borderColor === 'var(--danger)' ||
-             shortSection.querySelector('[class*="danger"]')).toBeTruthy();
+        shortSection.style.borderColor === 'var(--danger)' ||
+        shortSection.querySelector('[class*="danger"]')).toBeTruthy();
 
       // Check tokens are displayed
       expect(screen.getByText('BTC')).toBeTruthy();

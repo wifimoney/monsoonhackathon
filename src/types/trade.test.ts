@@ -92,11 +92,13 @@ describe('Trade Data Model', () => {
 describe('ChatMessage Type', () => {
   it('should support user and assistant roles with optional tradeProposal', () => {
     const userMessage: ChatMessage = {
+      id: '1',
       role: 'user',
       content: 'I think AI tokens will outperform ETH',
     };
 
     const assistantMessageWithProposal: ChatMessage = {
+      id: '2',
       role: 'assistant',
       content: 'Here is a trade proposal based on your thesis:',
       tradeProposal: {

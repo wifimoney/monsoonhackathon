@@ -2,6 +2,7 @@
 
 interface StarterPromptsProps {
   onSelectPrompt: (prompt: string) => void;
+  hasMessages?: boolean;
 }
 
 const STARTER_PROMPTS = [
@@ -10,7 +11,9 @@ const STARTER_PROMPTS = [
   'DeFi will outperform memecoins',
 ];
 
-export function StarterPrompts({ onSelectPrompt }: StarterPromptsProps) {
+export function StarterPrompts({ onSelectPrompt, hasMessages = false }: StarterPromptsProps) {
+  if (hasMessages) return null;
+
   return (
     <div className="flex flex-col items-center justify-center py-12 space-y-6">
       <div className="text-center space-y-2">

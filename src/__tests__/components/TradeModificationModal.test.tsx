@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
 import { TradeModificationModal } from '@/components/trade/TradeModificationModal';
 import { TradeProposalCard } from '@/components/trade/TradeProposalCard';
 import { TokenSearchInput } from '@/components/trade/TokenSearchInput';
