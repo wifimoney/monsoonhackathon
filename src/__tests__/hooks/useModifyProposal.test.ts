@@ -283,7 +283,7 @@ describe('useModifyProposal', () => {
       });
 
       expect(response).not.toBeNull();
-      expect(response?.content).toContain('modifications');
+      expect((response as any)?.content).toContain('modifications');
       expect(result.current.isOpen).toBe(false); // Modal closed after success
     });
 

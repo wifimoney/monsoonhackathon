@@ -6,7 +6,7 @@ export interface AuditRecord {
     timestamp: number;
 
     // Action categorization
-    actionType: 'trade' | 'transfer' | 'stake' | 'swap' | 'approval' | 'test' | 'order' | 'chat_trade';
+    actionType: 'trade' | 'transfer' | 'stake' | 'swap' | 'approval' | 'test' | 'order' | 'chat_trade' | 'deposit' | 'withdraw';
     actionCategory: 'execution' | 'order' | 'policy' | 'system';
 
     // Account context

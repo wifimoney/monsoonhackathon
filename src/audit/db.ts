@@ -77,6 +77,19 @@ function initializeSchema(): void {
         CREATE INDEX IF NOT EXISTS idx_audit_order_id ON audit_records(order_id);
         CREATE INDEX IF NOT EXISTS idx_audit_account_id ON audit_records(account_id);
     `);
+
+    // Guardrails configuration table
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS guardrails (
+            org_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (org_id, account_id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_guardrails_org ON guardrails(org_id);
+    `);
 }
 
 /**
