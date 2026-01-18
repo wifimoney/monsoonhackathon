@@ -1,0 +1,98 @@
+import { checkGuardrails } from '@/agent/guardrails';
+import { GUARDIAN_PRESETS } from '@/guardians/types';
+import type { ActionIntent } from '@/agent/types';
+import type { GuardiansConfig } from '@/guardians/types';
+
+/**
+ * Interface for trade requests coming from the frontend/API
+ */
+export interface TradeRequest {
+    symbol: string;         // e.g. "ETH-PERP"
+    size: number;           // USD value
+    side: 'BUY' | 'SELL';   // Direction
+    leverage?: number;      // Leverage multiplier
+}
+
+/**
+ * Result of the guardian validation
+ */
+export interface ValidationResult {
+    success: boolean;
+    reason?: string;
+    denials?: any[];
+}
+
+/**
+ * Service to validate trade requests against Salt's Guardian Policies
+ */
+export class GuardianService {
+
+    /**
+     * Get the active configuration for the user
+     * Fetches from SQLite if available, otherwise default
+     */
+    private static async getConfig(): Promise<GuardiansConfig> {
+        try {
+            // In a real app, context (userId/orgId) would be passed in or retrieved from request context
+            // For this hackathon, we use the env vars as the "active" session context
+            const orgId = process.env.SALT_ORG_ID;
+            const accountId = process.env.SALT_ACCOUNT_ID;
+
+            if (orgId && accountId) {
+                // Dynamic import to avoid circular dep issues if any, or just clean separation
+                const { getDatabase } = await import('@/audit/db');
+                const db = getDatabase();
+
+                const row = db.prepare('SELECT config_json FROM guardrails WHERE org_id = ? AND account_id = ?').get(orgId, accountId) as { config_json: string } | undefined;
+
+                if (row) {
+                    return JSON.parse(row.config_json);
+                }
+            }
+        } catch (error) {
+            console.warn("GuardianService: Failed to load config from DB, using default.", error);
+        }
+
+        // Default preset fallback
+        return GUARDIAN_PRESETS.default;
+    }
+
+    /**
+     * Validate a trade request against active policies
+     */
+    public static async validateTradeRequest(request: TradeRequest): Promise<ValidationResult> {
+        const config = await this.getConfig();
+
+        // Map generic TradeRequest to internal ActionIntent used by guardrails
+        // We use 'SPOT_MARKET_ORDER' type as a proxy for "Trade Intent" even for Perps in this MVP logic
+        const intent: ActionIntent = {
+            type: 'SPOT_MARKET_ORDER',
+            market: request.symbol,
+            side: request.side,
+            notionalUsd: request.size,
+            maxSlippageBps: 100, // Default 1%
+            validForSeconds: 60,
+            rationale: ['User initiated trade'],
+            riskNotes: []
+        };
+
+        // Run the check
+        const result = checkGuardrails(intent, config);
+
+        if (result.passed) {
+            return { success: true };
+        } else {
+            // Format the failure reason
+            const primaryDenial = result.denials[0];
+            const reason = primaryDenial
+                ? `${primaryDenial.name}: ${primaryDenial.reason}`
+                : "Policy violation detected";
+
+            return {
+                success: false,
+                reason,
+                denials: result.denials
+            };
+        }
+    }
+}

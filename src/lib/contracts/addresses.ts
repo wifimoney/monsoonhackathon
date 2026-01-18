@@ -1,7 +1,7 @@
 // Single Source of Truth - Deployed Addresses
 // Import from contracts/addresses.arbitrum-sepolia.json
 
-import addressesJson from '../../../contracts/addresses.arbitrum-sepolia.json';
+import addressesJson from '../../../contracts/addresses.hyperevm-testnet.json';
 
 // Type definitions
 interface TokenInfo {
@@ -54,6 +54,7 @@ export const HYPEREVM = {
     // Tokens
     TOKEN0: DEPLOYED.tokens.TOKEN0.address,
     TOKEN1: DEPLOYED.tokens.TOKEN1.address,
+    USDC_TESTNET: '0xd9CBEC81df392A88AEff575E962d149d57F4d6bc', // Official HyperEVM Testnet USDC
     WHYPE: '0x5555555555555555555555555555555555555555', // Legacy placeholder
 } as const;
 

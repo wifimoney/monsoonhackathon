@@ -111,6 +111,9 @@ export interface PearPosition {
   unrealizedPnL?: number;          // uppercase 'L' - legacy
   unrealizedPnLPercent?: number;   // legacy
   size?: number;                   // legacy - use positionValue instead
+  pair?: string;                   // legacy
+  symbol?: string;                 // legacy
+  leverage?: number;               // legacy
 }
 
 /**

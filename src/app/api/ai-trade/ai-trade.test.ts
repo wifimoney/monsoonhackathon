@@ -43,7 +43,7 @@ describe('AI Trade API Endpoints', () => {
         json: () => Promise.resolve(mockHyperliquidResponse),
       });
 
-      const response = await getTokens();
+      const response = await getTokens(new Request('http://localhost'));
       const data = await response.json();
 
       expect(data.success).toBe(true);
@@ -74,17 +74,17 @@ describe('AI Trade API Endpoints', () => {
       });
 
       // First request - should call fetch
-      await getTokens();
+      await getTokens(new Request('http://localhost'));
       expect(mockFetch).toHaveBeenCalledTimes(1);
 
       // Second request within 5 minutes - should use cache
       vi.advanceTimersByTime(4 * 60 * 1000); // 4 minutes
-      await getTokens();
+      await getTokens(new Request('http://localhost'));
       expect(mockFetch).toHaveBeenCalledTimes(1); // Still 1 call (cached)
 
       // Third request after 5 minutes - should fetch again
       vi.advanceTimersByTime(2 * 60 * 1000); // 2 more minutes (total 6 minutes)
-      await getTokens();
+      await getTokens(new Request('http://localhost'));
       expect(mockFetch).toHaveBeenCalledTimes(2); // Now 2 calls
     });
   });
