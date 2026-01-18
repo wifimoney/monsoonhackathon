@@ -69,6 +69,20 @@ export class Hyperliquid {
         };
     }
 
+    async getUserState(user: string): Promise<any> {
+        const response = await fetch(`${this.baseUrl}/info`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'clearinghouseState',
+                user: user,
+            }),
+        });
+
+        const data = await response.json();
+        return data;
+    }
+
     // ============ EXCHANGE API ============
 
     async placeOrder(params: OrderParams): Promise<string> {
