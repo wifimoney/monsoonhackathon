@@ -190,14 +190,20 @@ export function ConfirmationModal({
 
         {/* Trade Configuration */}
         <div className="bg-zinc-900 rounded-lg p-3 mb-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-3">
             <div>
-              <div className="text-xs text-zinc-400 mb-1">Size</div>
+              <div className="text-xs text-zinc-400 mb-1">Position Size</div>
               <div className="text-white font-semibold">{formatUsd(size)}</div>
             </div>
             <div>
               <div className="text-xs text-zinc-400 mb-1">Leverage</div>
               <div className="text-white font-semibold">{leverage}x</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-zinc-400 mb-1">Margin Required</div>
+              <div className="text-white font-semibold">{formatUsd(size / leverage)}</div>
             </div>
             <div>
               <div className="text-xs text-zinc-400 mb-1">Est. Fees</div>

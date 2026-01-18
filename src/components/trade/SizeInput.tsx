@@ -14,6 +14,8 @@ interface SizeInputProps {
   onMax: () => void;
   /** Available margin balance */
   availableMargin: number;
+  /** Current leverage value */
+  leverage: number;
   /** Whether margin data is loading */
   isLoading?: boolean;
 }
@@ -73,6 +75,7 @@ export function SizeInput({
   onChange,
   onMax,
   availableMargin,
+  leverage,
   isLoading = false,
 }: SizeInputProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,21 +128,34 @@ export function SizeInput({
         </button>
       </div>
 
-      {/* Available Margin display */}
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-zinc-500">Available Margin</span>
-        <div className="flex items-center">
-          {isLoading ? (
-            <span className="flex items-center gap-1 text-zinc-500">
-              <LoadingSpinner />
-              <span>Loading...</span>
-            </span>
-          ) : (
-            <span className="text-zinc-300">
-              ${formatBalance(availableMargin)}
-            </span>
-          )}
+      {/* Margin displays */}
+      <div className="space-y-1">
+        {/* Available Margin */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-zinc-500">Available Margin</span>
+          <div className="flex items-center">
+            {isLoading ? (
+              <span className="flex items-center gap-1 text-zinc-500">
+                <LoadingSpinner />
+                <span>Loading...</span>
+              </span>
+            ) : (
+              <span className="text-zinc-300">
+                ${formatBalance(availableMargin)}
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Margin Required */}
+        {value > 0 && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-zinc-500">Margin Required</span>
+            <span className="text-zinc-300">
+              ${formatBalance(value / leverage)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

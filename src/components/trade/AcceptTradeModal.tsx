@@ -468,20 +468,12 @@ export function AcceptTradeModal({
               border: '1px solid var(--card-border)',
             }}
           >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
-                Total Position Value
-              </span>
-              <span className="font-mono text-lg font-bold" style={{ color: 'var(--foreground)' }}>
-                ${(parseFloat(positionSizeUsd) * leverage).toLocaleString()}
-              </span>
-            </div>
             <div className="flex justify-between items-center">
               <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                 Margin Required
               </span>
-              <span className="font-mono text-sm" style={{ color: 'var(--foreground)' }}>
-                ${parseFloat(positionSizeUsd).toLocaleString()}
+              <span className="font-mono text-lg font-bold" style={{ color: 'var(--foreground)' }}>
+                ${(parseFloat(positionSizeUsd) / leverage).toFixed(2)}
               </span>
             </div>
           </div>
