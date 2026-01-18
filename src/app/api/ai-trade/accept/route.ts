@@ -41,10 +41,11 @@ interface PearPayload {
  * Format: { longAssets: [{asset, weight}], shortAssets: [{asset, weight}], slippage, leverage, usdValue, executionType }
  * Do NOT pass stopLoss/takeProfit to Pear API
  *
- * Each asset's weight is normalized WITHIN its side (long or short) to sum to 1.0
+ * Weights are converted from percentages to decimals and should sum to 1.0 TOTAL across both sides.
  * Example: 50% ARB long, 25% ETH short, 25% SOL short becomes:
- *   longAssets: [{ ARB: 1.0 }]  (100% of long side)
- *   shortAssets: [{ ETH: 0.5 }, { SOL: 0.5 }]  (50% each of short side)
+ *   longAssets: [{ ARB: 0.5 }]
+ *   shortAssets: [{ ETH: 0.25 }, { SOL: 0.25 }]
+ *   Total weights: 0.5 + 0.25 + 0.25 = 1.0
  */
 function convertToPearFormat(
   longPositions: Position[],
@@ -52,23 +53,23 @@ function convertToPearFormat(
   usdValue: number,
   leverage: number
 ): PearPayload {
-  // Calculate total weight for EACH side separately
-  const longTotalWeight = longPositions.reduce((sum, p) => sum + p.weight, 0);
-  const shortTotalWeight = shortPositions.reduce((sum, p) => sum + p.weight, 0);
+  // Calculate total weight across ALL positions (should sum to 100)
+  const totalWeight = longPositions.reduce((sum, p) => sum + p.weight, 0)
+                    + shortPositions.reduce((sum, p) => sum + p.weight, 0);
 
-  // Normalize weights WITHIN each side to sum to 1.0
+  // Convert percentage weights to decimals (0-1 range)
+  // All weights across both sides should sum to 1.0
   const longAssets = longPositions.map((p) => ({
     asset: p.symbol,
-    weight: longTotalWeight > 0 ? p.weight / longTotalWeight : 0,
+    weight: totalWeight > 0 ? p.weight / totalWeight : 0,
   }));
 
   const shortAssets = shortPositions.map((p) => ({
     asset: p.symbol,
-    weight: shortTotalWeight > 0 ? p.weight / shortTotalWeight : 0,
+    weight: totalWeight > 0 ? p.weight / totalWeight : 0,
   }));
 
-  console.log('[convertToPearFormat] Long side total:', longTotalWeight, '% -> weights:', longAssets);
-  console.log('[convertToPearFormat] Short side total:', shortTotalWeight, '% -> weights:', shortAssets);
+  console.log('[convertToPearFormat] Total weight:', totalWeight, '% -> long weights:', longAssets, ', short weights:', shortAssets);
 
   return {
     longAssets,

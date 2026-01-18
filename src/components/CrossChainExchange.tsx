@@ -258,15 +258,14 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         
         // Initialize progress steps for deposit
         // Check if we already have progress steps (from previous bridge)
-        if (progressSteps.length === 3) {
+        if (progressSteps.length === 2) {
             // Post-bridge deposit - continue from bridge progress
-            // Update step 3 description with current destinationDex
+            // Update step 2 description with current destinationDex
             setProgressSteps([
                 progressSteps[0], // Keep step 1: Sending tokens
-                progressSteps[1], // Keep step 2: Receiving on HyperEVM
                 `Depositing ${depositAmount} USDC to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
             ]);
-            setProgressStep(3); // Step 3: Depositing (steps 1 and 2 are already complete)
+            setProgressStep(2); // Step 2: Depositing (step 1 is already complete)
         } else {
             // Direct deposit (no bridge) - only one step
             setProgressSteps([
@@ -391,9 +390,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Update progress: Starting deposit
             if (!isHyperEVMSelected) {
-                setProgressStep(3); // Step 3: Depositing
+                setProgressStep(2); // Step 2: Depositing (post-bridge)
             } else {
-                setProgressStep(1);
+                setProgressStep(1); // Step 1: Depositing (direct deposit)
             }
 
             // Verify we're on HyperEVM by checking wallet client directly
@@ -526,7 +525,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             // Mark final step as complete
             const isPostBridge = depositAmountOverride !== undefined;
             if (isPostBridge) {
-                setProgressStep(3); // Step 3 complete (deposit after bridge)
+                setProgressStep(2); // Step 2 complete (deposit after bridge)
             } else {
                 setProgressStep(1); // Step 1 complete (direct deposit)
             }
@@ -634,9 +633,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setTxStatus('pending');
         // Initialize progress steps for cross-chain operation
         // Use the pre-selected destinationDex that user chose in amount step
+        // Removed "Receiving USDC on HyperEVM" step - tokens go directly to HyperCore
         setProgressSteps([
             `Sending ${amount} ${selectedAsset} on ${selectedChainData?.name}`,
-            `Receiving USDC on HyperEVM`,
             `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
         ]);
         setProgressStep(1); // Step 1: Sending tokens
@@ -753,9 +752,10 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     const doneSteps = updatedRoute.steps?.filter(s => s.execution?.status === 'DONE') || [];
                     const totalSteps = updatedRoute.steps?.length || 1;
                     
-                    // If all bridge steps are done, move to step 2 (receiving)
+                    // If all bridge steps are done, move to step 2 (depositing to HyperCore)
+                    // Skip the "Receiving on HyperEVM" step - go directly to deposit
                     if (doneSteps.length === totalSteps && totalSteps > 0) {
-                        setProgressStep(2); // Step 2: Receiving on HyperEVM
+                        setProgressStep(2); // Step 2: Depositing to HyperCore
                     } else if (currentStep && currentStep.execution?.status === 'PENDING') {
                         setProgressStep(1); // Step 1: Still sending/bridging
                     }
@@ -809,9 +809,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 ? formatTokenAmount(receivedAmount, route.toToken?.decimals || 6)
                 : amount;
 
-            // Mark step 2 as complete (receiving on HyperEVM)
-            setProgressStep(2);
-
             console.log('\n========== EXCHANGE SUCCESSFUL ==========');
             console.log(`[Exchange] ${amount} ${selectedAsset} -> ${receivedAmountFormatted} USDC on HyperEVM`);
             console.log(`[Exchange] Bridge verified: All steps completed successfully`);
@@ -819,32 +816,31 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Store bridged amount
             setBridgedAmount(receivedAmountFormatted);
+            // Ensure showDepositAfterBridge is false since we're auto-depositing
+            setShowDepositAfterBridge(false);
 
-            // Only trigger deposit if bridge was successful
-            // Verify the bridge completed successfully before depositing
+            // Automatically trigger deposit to HyperCore after successful bridge
+            // No user permission needed - deposit happens automatically after bridge
             console.log('\n========== VERIFYING BRIDGE SUCCESS ==========');
             console.log(`[Verification] Bridge completed: ${receivedAmountFormatted} USDC received on HyperEVM`);
             console.log(`[Verification] All bridge steps completed successfully`);
             console.log('===============================================\n');
 
             // Automatically trigger deposit to HyperCore after successful bridge
-            // Ensure progress steps are set up for the 3-step process
-            setProgressSteps([
-                `Sending ${amount} ${selectedAsset} on ${selectedChainData?.name}`,
-                `Receiving USDC on HyperEVM`,
-                `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
-            ]);
-            setProgressStep(2); // Steps 1 and 2 are done, starting step 3
+            // Progress steps are already set up for 2-step process (no "Receiving on HyperEVM" step)
+            setProgressStep(2); // Step 1 (sending) is done, starting step 2 (depositing to HyperCore)
             
             // Automatically trigger deposit with the bridged amount
             // Pass the bridged amount and HyperEVM config directly to handleDeposit
+            // This will prompt for wallet approval but happens automatically without user clicking a button
             console.log('\n========== AUTO-DEPOSIT AFTER BRIDGE ==========');
             console.log(`[Auto-Deposit] Starting automatic deposit of ${receivedAmountFormatted} USDC to HyperCore`);
-            console.log(`[Auto-Deposit] Bridge verified successful - proceeding with deposit`);
+            console.log(`[Auto-Deposit] Bridge verified successful - proceeding with automatic deposit`);
+            console.log(`[Auto-Deposit] Destination: HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`);
             console.log('================================================\n');
             
-            // Call handleDeposit with the bridged amount, overriding state values
-            // This will only execute if the bridge was successful (verified above)
+            // Automatically call handleDeposit - user will only need to approve the wallet transaction
+            // No intermediate success screen or manual button click required
             await handleDeposit(receivedAmountFormatted, HYPEREVM.chainId, 'USDC');
         } catch (error: any) {
             // Check if user rejected the transaction
@@ -910,23 +906,6 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setProgressSteps([]);
     };
 
-    const handleDepositAfterBridge = () => {
-        // Switch to HyperEVM deposit flow
-        // Update progress steps to show all 3 steps (1 and 2 already done)
-        setProgressSteps([
-            `Sending ${bridgedAmount || amount} ${selectedAsset} on ${selectedChainData?.name}`,
-            `Receiving USDC on HyperEVM`,
-            `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
-        ]);
-        setProgressStep(2); // Step 1 and 2 are complete, about to start step 3
-        
-        setSelectedChain(HYPEREVM.chainId);
-        setSelectedAsset('USDC');
-        setAmount(bridgedAmount); // Use the bridged amount
-        setStep('amount'); // Go to amount step where they can select Spot/Perps
-        setTxStatus('idle');
-        setShowDepositAfterBridge(false);
-    };
 
 
     if (!isConnected) {
@@ -1460,49 +1439,15 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4">✓</div>
                         <h4 className="text-lg font-bold text-[var(--accent)] mb-2">
-                            {/* Show "Deposit Successful!" if: 
-                                1. Direct deposit on HyperEVM (isHyperEVMSelected), OR
-                                2. Post-bridge deposit completed (progressSteps.length === 3 and progressStep === 3) */}
-                            {(isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)) 
-                                ? 'Deposit Successful!' 
-                                : 'Bridge Successful!'}
+                            {/* Always show "Deposit Successful!" since automatic deposit completes the full flow */}
+                            Deposit Successful!
                         </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
-                            {(isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3))
-                                ? `${amount || bridgedAmount} USDC transferred from HyperEVM to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
-                                : `${bridgedAmount || amount} USDC is now on HyperEVM`}
+                            {`${amount || bridgedAmount} USDC transferred to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`}
                         </p>
-                        {!isHyperEVMSelected && !(progressSteps.length === 3 && progressStep === 3) && showDepositAfterBridge && (
-                            <div className="space-y-3">
-                                <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-4 mb-4">
-                                    <div className="text-sm text-[var(--muted)] mb-2">
-                                        Your USDC is on HyperEVM. Ready to deposit to HyperCore.
-                                    </div>
-                                    <div className="text-xs text-[var(--muted)]">
-                                        Destination: <strong>{destinationDex === 'spot' ? 'Spot' : 'Perps'} Account</strong>
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={handleDepositAfterBridge} 
-                                    className="btn btn-accent w-full py-4"
-                                >
-                                    Deposit to HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'}
-                                </button>
-                                <button onClick={resetForm} className="btn btn-secondary w-full">
-                                    Done
-                                </button>
-                            </div>
-                        )}
-                        {isHyperEVMSelected && (
-                            <button onClick={resetForm} className="btn btn-secondary">
-                                New Deposit
-                            </button>
-                        )}
-                        {!isHyperEVMSelected && !showDepositAfterBridge && (
                         <button onClick={resetForm} className="btn btn-secondary">
-                            New Exchange
+                            {isHyperEVMSelected ? 'New Deposit' : 'New Exchange'}
                         </button>
-                        )}
                     </div>
                 )}
 

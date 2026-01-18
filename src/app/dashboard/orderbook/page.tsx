@@ -9,37 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, RefreshCw, Shield, CheckCircle, XCircle, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-// HyperEVM Testnet Chain ID
-const REQUIRED_CHAIN_ID = 998
-
-interface OrderLevel {
-  price: string
-  size: string
-  total: string
-}
-
-interface Orderbook {
-  asset: string
-  timestamp: number
-  bids: OrderLevel[]
-  asks: OrderLevel[]
-  midPrice: string
-  spread: { absolute: string; percentage: string }
-  isMock?: boolean
-}
-
-interface OrderResult {
-  success: boolean
-  orderId?: string
-  filledPrice?: number
-  filledSize?: number
-  status?: string
-  error?: string
-  denials?: any[]
-}
-
-const ASSETS = ['HYPE', 'ETH', 'BTC', 'SOL', 'ARB']
+import { useOrderBook, useTicker } from "@/hooks/useHyperliquid"
 
 export default function OrderbookPage() {
   const { isConnected, chain } = useAccount()
@@ -174,22 +144,41 @@ export default function OrderbookPage() {
     )
   }
 
+  // Fetch real data
+  const { data: orderBook, isLoading } = useOrderBook("ETH");
+  const { price: currentPrice } = useTicker("ETH");
+
+  const formatPrice = (p: string) => parseFloat(p).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatSize = (s: string) => parseFloat(s).toFixed(4);
+  const calculateTotal = (p: string, s: string) => (parseFloat(p) * parseFloat(s)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Process asks (sells) - reverse to show lowest ask at bottom (closest to spread)
+  // Hyperliquid returns [bids, asks]. bids are high to low, asks are low to high.
+  // We want asks displayed from high to low usually in a vertical list, 
+  // but typically orderbooks show:
+  // ASKS (High -> Low)
+  // SPREAD
+  // BIDS (High -> Low)
+  // Wait, standard vertical orderbook:
+  // Asks: Highest Price ... Lowest Price (closest to spread)
+  // Spread
+  // Bids: Highest Price (closest to spread) ... Lowest Price
+
+  // Hyperliquid asks are sorted by price inc (lowest first). 
+  // So we probably want to slice the first 5 (lowest/best asks) and then reverse them for display 
+  // so the lowest ask is at the bottom of the list, just above the spread.
+
+  const asks = orderBook?.levels[1]?.slice(0, 5).reverse() || [];
+  const bids = orderBook?.levels[0]?.slice(0, 5) || [];
+
   return (
     <div className="space-y-8">
       {/* Stats Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <DataCard
-          title={`${selectedAsset}/USDC`}
-          value={`$${orderbook?.midPrice || '0'}`}
-          subtitle={orderbook?.isMock ? "Mock Data" : "Live"}
-        />
-        <DataCard title="24h Volume" value="$12.4M" subtitle={`${selectedAsset}/USDC`} />
-        <DataCard title="Open Orders" value="3" subtitle="$4,500 total" />
-        <DataCard
-          title="Spread"
-          value={`${orderbook?.spread?.percentage || '0'}%`}
-          subtitle={`$${orderbook?.spread?.absolute || '0'}`}
-        />
+        <DataCard title="ETH/USDC" value={currentPrice ? `$${formatPrice(currentPrice)}` : "Loading..."} subtitle="HyperCore Oracle" />
+        <DataCard title="24h Volume" value="$12.4M" subtitle="ETH/USDC" />
+        <DataCard title="Open Orders" value="0" subtitle="$0.00 total" />
+        <DataCard title="Spread" value="-" subtitle="Calculated" />
       </div>
 
       {/* Order Result Toast */}
@@ -245,50 +234,50 @@ export default function OrderbookPage() {
             <span className="text-right">Total (USDC)</span>
           </div>
 
-          {/* Asks (Sells) - reversed to show lowest at bottom */}
-          <div className="space-y-1 mb-4">
-            {[...(orderbook?.asks || [])].reverse().map((ask, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative"
-                onClick={() => handleRowClick(ask.price)}
-              >
-                <div
-                  className="absolute inset-y-0 right-0 bg-red-500/10"
-                  style={{ width: `${Math.min(parseFloat(ask.size) * 15, 100)}%` }}
-                />
-                <span className="text-red-400 font-mono text-sm relative z-10">{ask.price}</span>
-                <span className="text-center font-mono text-sm relative z-10">{ask.size}</span>
-                <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{ask.total}</span>
-              </div>
-            ))}
+          {/* Asks (Sells) */}
+          <div className="space-y-1 mb-4 flex flex-col justify-end min-h-[160px]">
+            {isLoading ? (
+              <div className="text-center text-muted-foreground text-sm py-4">Loading asks...</div>
+            ) : (
+              asks.map((ask, i) => (
+                <div key={i} className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative">
+                  <div
+                    className="absolute inset-y-0 right-0 bg-red-500/10"
+                    style={{ width: `${Math.min(Number.parseFloat(ask.sz) * 10, 100)}%` }}
+                  />
+                  <span className="text-red-400 font-mono text-sm relative z-10">{formatPrice(ask.px)}</span>
+                  <span className="text-center font-mono text-sm relative z-10">{formatSize(ask.sz)}</span>
+                  <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{calculateTotal(ask.px, ask.sz)}</span>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Spread */}
           <div className="flex items-center justify-center py-3 border-y border-border/30 my-4">
-            <span className="text-2xl font-bold font-mono tracking-tight">{orderbook?.midPrice || '0'}</span>
-            <span className="ml-2 text-muted-foreground font-mono text-sm">
-              Spread: {orderbook?.spread?.percentage || '0'}%
+            <span className="text-2xl font-bold font-mono tracking-tight">
+              {currentPrice ? formatPrice(currentPrice) : "---.--"}
             </span>
+            <span className="ml-2 text-emerald-400 font-mono text-sm">Oracle Price</span>
           </div>
 
           {/* Bids (Buys) */}
-          <div className="space-y-1">
-            {(orderbook?.bids || []).map((bid, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative"
-                onClick={() => handleRowClick(bid.price)}
-              >
-                <div
-                  className="absolute inset-y-0 right-0 bg-emerald-500/10"
-                  style={{ width: `${Math.min(parseFloat(bid.size) * 15, 100)}%` }}
-                />
-                <span className="text-emerald-400 font-mono text-sm relative z-10">{bid.price}</span>
-                <span className="text-center font-mono text-sm relative z-10">{bid.size}</span>
-                <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{bid.total}</span>
-              </div>
-            ))}
+          <div className="space-y-1 min-h-[160px]">
+            {isLoading ? (
+              <div className="text-center text-muted-foreground text-sm py-4">Loading bids...</div>
+            ) : (
+              bids.map((bid, i) => (
+                <div key={i} className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative">
+                  <div
+                    className="absolute inset-y-0 right-0 bg-emerald-500/10"
+                    style={{ width: `${Math.min(Number.parseFloat(bid.sz) * 10, 100)}%` }}
+                  />
+                  <span className="text-emerald-400 font-mono text-sm relative z-10">{formatPrice(bid.px)}</span>
+                  <span className="text-center font-mono text-sm relative z-10">{formatSize(bid.sz)}</span>
+                  <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{calculateTotal(bid.px, bid.sz)}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -315,14 +304,14 @@ export default function OrderbookPage() {
           <div className="grid grid-cols-2 gap-2 mb-6">
             <Button
               variant={side === "buy" ? "default" : "outline"}
-              className={cn("font-medium tracking-tight", side === "buy" && "bg-emerald-600 hover:bg-emerald-700")}
+              className={cn("font-medium tracking-tight", side === "buy" ? "bg-emerald-600 hover:bg-emerald-700" : "")}
               onClick={() => setSide("buy")}
             >
               Buy
             </Button>
             <Button
               variant={side === "sell" ? "default" : "outline"}
-              className={cn("font-medium tracking-tight", side === "sell" && "bg-red-600 hover:bg-red-700")}
+              className={cn("font-medium tracking-tight", side === "sell" ? "bg-red-600 hover:bg-red-700" : "")}
               onClick={() => setSide("sell")}
             >
               Sell
@@ -337,8 +326,7 @@ export default function OrderbookPage() {
                   <Input
                     type="number"
                     placeholder="0.00"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
+                    defaultValue={currentPrice || "3000.00"}
                     className="bg-black/50 border-border/50 font-mono pr-16"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
@@ -381,8 +369,7 @@ export default function OrderbookPage() {
             </div>
 
             <Button
-              onClick={handleSubmitOrder}
-              disabled={submitting || !amount || (orderType === 'limit' && !price)}
+              disabled={true} // Disabled for now as this is just visualization
               className={cn(
                 "w-full font-medium tracking-tight",
                 side === "buy" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700",
@@ -400,6 +387,9 @@ export default function OrderbookPage() {
                 </>
               )}
             </Button>
+            <p className="text-xs text-center text-muted-foreground">
+              Trading enabled via Agent Chat only
+            </p>
           </div>
         </div>
       </div>

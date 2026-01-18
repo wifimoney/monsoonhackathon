@@ -510,6 +510,7 @@ export default function TradePage() {
         onChange={setSize}
         onMax={handleMaxSize}
         availableMargin={withdrawable ?? 0}
+        leverage={leverage}
         isLoading={marginLoading}
       />
 
@@ -543,7 +544,7 @@ export default function TradePage() {
       <button
         onClick={handleExecuteClick}
         disabled={isExecuteDisabled}
-        className={`w-full mt-4 py-3 px-4 rounded-lg font-semibold text-white transition-all flex items-center justify-center gap-2 ${
+        className={`w-full mt-8 py-3 px-4 rounded-lg font-semibold text-white transition-all flex items-center justify-center gap-2 ${
           isExecuteDisabled
             ? 'bg-zinc-700 cursor-not-allowed opacity-50'
             : 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400'
