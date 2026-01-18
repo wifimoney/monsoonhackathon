@@ -6,6 +6,7 @@ import "../src/MonsoonALM.sol";
 import "../src/HyperCoreQuoter.sol";
 import "./mocks/MockSovereignPool.sol";
 import "./mocks/MockERC20.sol";
+import "../src/yield/MockYieldStrategy.sol";
 
 contract MonsoonALMTest is Test {
     MonsoonALM public alm;
@@ -212,17 +213,14 @@ contract MonsoonALMTest is Test {
         assertEq(ammR1, 100e18, "Should be back to full");
     }
 
-    function testSetSwapFee() public {
+    function testSetPricingParams() public {
         vm.prank(strategist);
-        alm.setSwapFee(50); // 0.5%
+        alm.setPricingParams(50, 100, 5000);
         
-        assertEq(alm.swapFeeBps(), 50);
-    }
-
-    function testSetSwapFeeTooHighReverts() public {
-        vm.prank(strategist);
-        vm.expectRevert(MonsoonALM.FeeTooHigh.selector);
-        alm.setSwapFee(200); // 2% > max 1%
+        (uint256 base, uint256 skew, uint256 target) = alm.pricingParams();
+        assertEq(base, 50);
+        assertEq(skew, 100);
+        assertEq(target, 5000);
     }
 
     // ============ PAUSE TESTS ============
@@ -283,5 +281,50 @@ contract MonsoonALMTest is Test {
         assertEq(feeBps, 30);
         assertFalse(isPaused);
         assertEq(oraclePrice, 2000e18);
+    }
+
+    // ============ YIELD TESTS ============
+
+    function testAllocateToYield() public {
+        MockYieldStrategy strategy = new MockYieldStrategy(address(token0));
+        
+        // Deposit liquidity
+        vm.prank(user1);
+        alm.deposit(100e18, 100e18, 0, user1);
+        
+        // Allocate 50 token0 to yield
+        vm.prank(strategist);
+        alm.allocateToYield(address(strategy), 50e18);
+        
+        assertEq(strategy.balanceOf(address(alm)), 50e18, "ALM should hold strategy shares");
+        assertEq(strategy.totalAssets(), 50e18, "Strategy should hold assets");
+        assertEq(token0.balanceOf(address(strategy)), 50e18, "Strategy should hold token0");
+        
+        // Check pool reserves decreased
+        (uint256 r0, uint256 r1) = pool.getReserves();
+        assertEq(r0, 50e18, "Pool reserve0 should decrease");
+        assertEq(r1, 100e18, "Pool reserve1 unchanged");
+        
+        // Check ALM state
+        assertEq(alm.yieldAllocations(address(strategy)), 50e18, "Allocation tracked");
+    }
+
+    function testDeallocateFromYield() public {
+        MockYieldStrategy strategy = new MockYieldStrategy(address(token0));
+        
+        vm.prank(user1);
+        alm.deposit(100e18, 100e18, 0, user1);
+        
+        vm.prank(strategist);
+        alm.allocateToYield(address(strategy), 50e18);
+        
+        // Deallocate
+        vm.prank(strategist);
+        alm.deallocateFromYield(address(strategy), 50e18);
+        
+        assertEq(strategy.totalAssets(), 0, "Strategy should be empty");
+        
+        (uint256 r0, ) = pool.getReserves();
+        assertEq(r0, 100e18, "Pool reserve restored");
     }
 }
