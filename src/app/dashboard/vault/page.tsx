@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useAccount } from "wagmi"
+import { useAccount, useSwitchChain } from "wagmi"
 import { DataCard } from "@/components/data-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Wallet, ArrowUpRight, ArrowDownLeft, Loader2, Shield, CheckCircle, XCircle, Lock } from "lucide-react"
+import { Wallet, ArrowUpRight, ArrowDownLeft, Loader2, Shield, CheckCircle, XCircle, Lock, AlertTriangle, RefreshCw } from "lucide-react"
 import {
   usePoolInfo,
   useLPBalance,
@@ -19,6 +19,9 @@ import {
 } from "@/lib/contracts/hooks"
 import { HYPEREVM, DEPLOYED } from "@/lib/contracts/addresses"
 
+// HyperEVM Testnet Chain ID
+const REQUIRED_CHAIN_ID = 998
+
 interface SimulationResult {
   approved: boolean
   reason?: string
@@ -26,7 +29,8 @@ interface SimulationResult {
 }
 
 export default function VaultPage() {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain } = useAccount()
+  const { switchChain, isPending: isSwitching } = useSwitchChain()
   const [depositAmount, setDepositAmount] = useState("")
   const [withdrawAmount, setWithdrawAmount] = useState("")
 
@@ -37,15 +41,70 @@ export default function VaultPage() {
   // Action states
   const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
 
-  // Contract reads (wagmi)
-  const { data: poolInfo, isLoading: poolLoading } = usePoolInfo()
-  const { data: lpBalance } = useLPBalance(address)
-  const { data: token0Balance } = useTokenBalance(HYPEREVM.TOKEN0, address)
+  // Check if on correct chain
+  const isWrongChain = isConnected && chain?.id !== REQUIRED_CHAIN_ID
+
+  // Contract reads (wagmi) - with refetch capability
+  const { data: poolInfo, isLoading: poolLoading, refetch: refetchPool } = usePoolInfo()
+  const { data: lpBalance, refetch: refetchLpBalance } = useLPBalance(address)
+  const { data: token0Balance, refetch: refetchToken0 } = useTokenBalance(HYPEREVM.TOKEN0, address)
+  const { data: token1Balance, refetch: refetchToken1 } = useTokenBalance(HYPEREVM.TOKEN1, address)
 
   // Contract writes (wagmi - executes on HyperEVM)
-  const { approve, isPending: isApproving } = useApproveToken()
-  const { deposit, isPending: isDepositing, isConfirming: isDepositConfirming } = useDeposit()
-  const { withdraw, isPending: isWithdrawing, isConfirming: isWithdrawConfirming } = useWithdraw()
+  const { approve, isPending: isApproving, isSuccess: isApproveSuccess, hash: approveHash } = useApproveToken()
+  const { deposit, isPending: isDepositing, isConfirming: isDepositConfirming, isSuccess: isDepositSuccess, hash: depositHash } = useDeposit()
+  const { withdraw, isPending: isWithdrawing, isConfirming: isWithdrawConfirming, isSuccess: isWithdrawSuccess, hash: withdrawHash } = useWithdraw()
+
+  // Auto-refresh balances after successful transactions
+  useEffect(() => {
+    if (isDepositSuccess || isWithdrawSuccess) {
+      // Delay to allow chain to update
+      const timer = setTimeout(() => {
+        refetchPool()
+        refetchLpBalance()
+        refetchToken0()
+        refetchToken1()
+        setActionResult({
+          success: true,
+          message: isDepositSuccess
+            ? `Deposit confirmed! TX: ${depositHash?.slice(0, 10)}...`
+            : `Withdraw confirmed! TX: ${withdrawHash?.slice(0, 10)}...`
+        })
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [isDepositSuccess, isWithdrawSuccess, depositHash, withdrawHash])
+
+  // Show chain switch prompt if on wrong chain
+  if (isWrongChain) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-6">
+        <div className="p-6 rounded-xl border border-yellow-500/30 bg-yellow-500/10 max-w-md text-center">
+          <AlertTriangle className="h-12 w-12 text-yellow-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Wrong Network</h2>
+          <p className="text-muted-foreground mb-4">
+            You're connected to <span className="font-mono text-yellow-400">{chain?.name || `Chain ${chain?.id}`}</span>.
+            <br />
+            Please switch to <span className="font-mono text-primary">HyperEVM Testnet</span> to use the Vault.
+          </p>
+          <Button
+            onClick={() => switchChain({ chainId: REQUIRED_CHAIN_ID })}
+            disabled={isSwitching}
+            className="bg-primary hover:bg-primary/90"
+          >
+            {isSwitching ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Switching...
+              </>
+            ) : (
+              "Switch to HyperEVM Testnet"
+            )}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   // Simulate deposit/withdraw via Salt Guardian policies
   const simulateAction = async (action: 'deposit' | 'withdraw', amount: string) => {
@@ -159,6 +218,7 @@ export default function VaultPage() {
   const oraclePrice = poolInfo ? formatTokenAmount(poolInfo[11], 18) : "0"
   const userLPBalance = lpBalance ? formatTokenAmount(lpBalance, 18) : "0"
   const userToken0 = token0Balance ? formatTokenAmount(token0Balance, 6) : "0"
+  const userToken1 = token1Balance ? formatTokenAmount(token1Balance, 18) : "0"
 
   const isProcessing = isSimulating || isApproving || isDepositing || isDepositConfirming || isWithdrawing || isWithdrawConfirming
 
@@ -174,6 +234,35 @@ export default function VaultPage() {
         <Lock className="h-4 w-4 text-primary/60" />
       </div>
 
+      {/* Your Wallet Balances */}
+      {isConnected && (
+        <div className="rounded-xl border border-border/50 bg-gradient-to-r from-primary/5 to-emerald-500/5 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-primary" />
+              <h2 className="font-semibold">Your Wallet</h2>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">
+              {address?.slice(0, 6)}...{address?.slice(-4)}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-3 rounded-lg bg-black/20">
+              <p className="text-caption text-xs mb-1">{DEPLOYED.tokens.TOKEN0.symbol}</p>
+              <p className="text-lg font-bold font-mono">{parseFloat(userToken0).toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-black/20">
+              <p className="text-caption text-xs mb-1">{DEPLOYED.tokens.TOKEN1.symbol}</p>
+              <p className="text-lg font-bold font-mono">{parseFloat(userToken1).toFixed(6)}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-black/20 border border-emerald-500/20">
+              <p className="text-caption text-xs mb-1">LP Tokens</p>
+              <p className="text-lg font-bold font-mono text-emerald-400">{parseFloat(userLPBalance).toFixed(4)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Simulation / Action Result */}
       {simulationResult && !simulationResult.approved && (
         <div className="p-4 rounded-lg border bg-red-500/10 border-red-500/30 flex items-center gap-3">
@@ -187,15 +276,33 @@ export default function VaultPage() {
 
       {actionResult && (
         <div className={`p-4 rounded-lg border flex items-center gap-3 ${actionResult.success
-            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-            : 'bg-red-500/10 border-red-500/30 text-red-400'
+          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+          : 'bg-red-500/10 border-red-500/30 text-red-400'
           }`}>
           {actionResult.success ? <CheckCircle className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
           <p className="text-sm">{actionResult.message}</p>
         </div>
       )}
 
-      {/* Stats Row */}
+      {/* Stats Row with Refresh Button */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Pool Stats</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            refetchPool()
+            refetchLpBalance()
+            refetchToken0()
+            refetchToken1()
+          }}
+          disabled={poolLoading}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${poolLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <DataCard
           title="Pool Reserves (Token0)"

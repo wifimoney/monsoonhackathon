@@ -1,13 +1,17 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useAccount, useSwitchChain } from "wagmi"
 import { DataCard } from "@/components/data-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, RefreshCw, Shield, CheckCircle, XCircle } from "lucide-react"
+import { Loader2, RefreshCw, Shield, CheckCircle, XCircle, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+// HyperEVM Testnet Chain ID
+const REQUIRED_CHAIN_ID = 998
 
 interface OrderLevel {
   price: string
@@ -38,6 +42,9 @@ interface OrderResult {
 const ASSETS = ['HYPE', 'ETH', 'BTC', 'SOL', 'ARB']
 
 export default function OrderbookPage() {
+  const { isConnected, chain } = useAccount()
+  const { switchChain, isPending: isSwitching } = useSwitchChain()
+
   const [orderType, setOrderType] = useState<"limit" | "market">("limit")
   const [side, setSide] = useState<"buy" | "sell">("buy")
   const [selectedAsset, setSelectedAsset] = useState("HYPE")
@@ -47,6 +54,40 @@ export default function OrderbookPage() {
   // Orderbook data
   const [orderbook, setOrderbook] = useState<Orderbook | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Check if on correct chain
+  const isWrongChain = isConnected && chain?.id !== REQUIRED_CHAIN_ID
+
+  // Show chain switch prompt if on wrong chain
+  if (isWrongChain) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-6">
+        <div className="p-6 rounded-xl border border-yellow-500/30 bg-yellow-500/10 max-w-md text-center">
+          <AlertTriangle className="h-12 w-12 text-yellow-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Wrong Network</h2>
+          <p className="text-muted-foreground mb-4">
+            You're connected to <span className="font-mono text-yellow-400">{chain?.name || `Chain ${chain?.id}`}</span>.
+            <br />
+            Please switch to <span className="font-mono text-primary">HyperEVM Testnet</span> to use the Orderbook.
+          </p>
+          <Button
+            onClick={() => switchChain({ chainId: REQUIRED_CHAIN_ID })}
+            disabled={isSwitching}
+            className="bg-primary hover:bg-primary/90"
+          >
+            {isSwitching ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Switching...
+              </>
+            ) : (
+              "Switch to HyperEVM Testnet"
+            )}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   // Order submission
   const [submitting, setSubmitting] = useState(false)

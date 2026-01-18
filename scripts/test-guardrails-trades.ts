@@ -67,10 +67,10 @@ const LARGE_TRADE: ActionIntent = {
     riskNotes: [],
 };
 
-// Extended type for leverage testing
-interface LeveragedIntent extends ActionIntent {
+// Extended type for leverage testing (using intersection instead of extends)
+type LeveragedIntent = ActionIntent & {
     leverage: number;
-}
+};
 
 const LEVERAGED_TRADE: LeveragedIntent = {
     type: 'SPOT_MARKET_ORDER',
@@ -289,12 +289,15 @@ async function testTradeSimulation(): Promise<boolean> {
 
     // Step 3: Record trade
     log('3️⃣', 'Recording trade in state...');
-    recordTrade(SMALL_TRADE.market, SMALL_TRADE.notionalUsd);
+    // SMALL_TRADE is a market order, so it has market and notionalUsd
+    const market = 'market' in SMALL_TRADE ? SMALL_TRADE.market : 'UNKNOWN';
+    const notional = 'notionalUsd' in SMALL_TRADE ? SMALL_TRADE.notionalUsd : 0;
+    recordTrade(market, notional);
     pass('Trade recorded');
 
     // Step 4: Verify state updated
     const state = getGuardiansState();
-    if (state.tradeCount === 1 && state.dailySpend === SMALL_TRADE.notionalUsd) {
+    if (state.tradeCount === 1 && state.dailySpend === notional) {
         pass('State correctly updated');
     } else {
         fail('State update');
