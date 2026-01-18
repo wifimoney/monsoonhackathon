@@ -239,35 +239,6 @@ export function ConnectWallet() {
                                         className="w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center gap-3"
                                     >
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M8 3L4 7l4 4M16 21l4-4-4-4" />
-                                        </svg>
-                                        <span>Swap</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setShowFundMenu(false)}
-                                        className="w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center gap-3"
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <circle cx="12" cy="12" r="10" />
-                                            <path d="M12 8v8M8 12h8" />
-                                        </svg>
-                                        <span>Buy</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setShowFundMenu(false)}
-                                        className="w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center gap-3"
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                                            <path d="M9 3v18M3 9h18" />
-                                        </svg>
-                                        <span>Transfer</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setShowFundMenu(false)}
-                                        className="w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center gap-3"
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                             <path d="M12 19V5M5 12l7-7 7 7" />
                                         </svg>
                                         <span>Withdraw</span>
