@@ -42,3 +42,12 @@ export function truncateAddress(address: string): string {
 export function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+/**
+ * Stub for askForInput - legacy strategy support
+ * In production, this would prompt for user input
+ */
+export async function askForInput(prompt: string): Promise<string> {
+    console.log(`[askForInput] ${prompt} - returning default "0"`);
+    return "0";
+}

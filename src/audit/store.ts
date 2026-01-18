@@ -271,6 +271,7 @@ export function getAuditStats(): AuditStats {
         filled: 0,
         partial: 0,
         failed: 0,
+        confirmed: 0,
     };
     for (const row of byStatusRows) {
         if (row.status in byStatus) {

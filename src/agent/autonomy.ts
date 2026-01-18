@@ -43,7 +43,6 @@ export function checkAutonomy(
     config: AutonomyConfig = DEFAULT_CONFIG
 ): AutonomyDecision {
     const warnings: string[] = [];
-    const marketSymbol = intent.market.split('/')[0];
 
     // Level 0: Always require approval
     if (config.level === 0) {
@@ -54,6 +53,19 @@ export function checkAutonomy(
             riskLevel: 'low',
         };
     }
+
+    // Handle TRANSFER intents separately - they don't have a market
+    if (intent.type === 'TRANSFER') {
+        return {
+            canAutoExecute: false,
+            requiresApproval: true,
+            reason: 'Transfer actions require manual approval',
+            riskLevel: 'medium',
+            warnings: [`Transfer of ${intent.amount} ${intent.token} to ${intent.to}`],
+        };
+    }
+
+    const marketSymbol = intent.market.split('/')[0];
 
     // Check override rules first
     if (config.alwaysRequireApproval) {

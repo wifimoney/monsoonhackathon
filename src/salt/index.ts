@@ -23,14 +23,14 @@ export interface TransactionResult {
  * Submit a transaction through Salt's MPC protocol
  */
 export async function sendTransaction({
-    accountId,
+    accountId = 'default',
     recipient,
     value,
     data,
     gas,
     onLog,
 }: {
-    accountId: string;
+    accountId?: string;
     recipient: string;
     value: BigNumber;
     data?: string;
@@ -127,4 +127,18 @@ export async function getOrganizations() {
     const signer = getSigner();
     await salt.authenticate(signer);
     return salt.getOrganisations();
+}
+
+/**
+ * Alias for sendTransaction (backwards compatibility)
+ */
+export const sendTransactionDirect = sendTransaction;
+
+/**
+ * Stub for askForInput - legacy strategy support
+ * In production, this would prompt for user input
+ */
+export async function askForInput(prompt: string): Promise<string> {
+    console.log(`[askForInput] ${prompt} - returning default "0"`);
+    return "0";
 }

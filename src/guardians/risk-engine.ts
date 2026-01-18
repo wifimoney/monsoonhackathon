@@ -11,6 +11,9 @@ function checkSpend(
 ): GuardianDenial | null {
     if (!config.spend.enabled) return null;
 
+    // TRANSFER intents don't have notionalUsd
+    if (intent.type === 'TRANSFER') return null;
+
     // Per-trade check
     if (intent.notionalUsd > config.spend.maxPerTrade) {
         return {
@@ -67,6 +70,9 @@ function checkExposure(
     config: GuardiansConfig
 ): GuardianDenial | null {
     if (!config.exposure.enabled) return null;
+
+    // TRANSFER intents don't have a market property
+    if (intent.type === 'TRANSFER') return null;
 
     const symbol = intent.market.split('/')[0];
     const currentPosition = getPosition(symbol);

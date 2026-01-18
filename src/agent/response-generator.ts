@@ -28,11 +28,20 @@ export async function generateResponse(
     }
 
     try {
+        // Format action intent description based on type
+        const actionDescription = (() => {
+            if (!actionIntent) return 'None';
+            if (actionIntent.type === 'TRANSFER') {
+                return `TRANSFER ${actionIntent.amount} ${actionIntent.token} to ${actionIntent.to}`;
+            }
+            return `${actionIntent.side} ${actionIntent.market} $${actionIntent.notionalUsd}`;
+        })();
+
         const context = `
 User said: "${userMessage}"
 Intent: ${intent.assetClass}, ${intent.preference}, ${intent.strategy}
 Top matches: ${matches.slice(0, 3).map(m => `${m.symbol} (score: ${m.score.toFixed(2)})`).join(', ')}
-Recommended action: ${actionIntent ? `${actionIntent.side} ${actionIntent.market} $${actionIntent.notionalUsd}` : 'None'}
+Recommended action: ${actionDescription}
     `;
 
         const response = await openrouter.chat.completions.create({

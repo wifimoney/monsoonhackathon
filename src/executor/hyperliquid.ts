@@ -182,6 +182,11 @@ export class Hyperliquid {
         // Create EIP-712 signature for Hyperliquid
         // This is simplified - check Hyperliquid docs for exact format
         const message = JSON.stringify({ action, nonce: timestamp });
+
+        if (!this.account || !('signMessage' in this.account) || typeof this.account.signMessage !== 'function') {
+            throw new Error('Account does not support message signing');
+        }
+
         const signature = await this.account.signMessage({ message });
         return signature;
     }

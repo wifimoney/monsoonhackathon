@@ -5,16 +5,6 @@ import { useAccount, useDisconnect, useConnect } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { CrossChainExchange } from './CrossChainExchange';
 
-// Extend Window interface for ethereum provider
-declare global {
-    interface Window {
-        ethereum?: {
-            request: (args: { method: string; params?: any[] }) => Promise<any>;
-            isMetaMask?: boolean;
-        };
-    }
-}
-
 export function ConnectWallet() {
     const { address, isConnected, chain, connector } = useAccount();
     const { disconnect } = useDisconnect();
@@ -175,18 +165,16 @@ export function ConnectWallet() {
                                             <button
                                                 key={addr}
                                                 onClick={() => handleAddressSwitch(addr)}
-                                                className={`w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center justify-between gap-3 ${
-                                                    addr.toLowerCase() === address?.toLowerCase()
+                                                className={`w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center justify-between gap-3 ${addr.toLowerCase() === address?.toLowerCase()
                                                         ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]'
                                                         : ''
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                                        addr.toLowerCase() === address?.toLowerCase()
+                                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${addr.toLowerCase() === address?.toLowerCase()
                                                             ? 'bg-[var(--primary)]'
                                                             : 'bg-[var(--muted)]'
-                                                    }`} />
+                                                        }`} />
                                                     <span className="font-mono text-sm truncate">
                                                         {addr.slice(0, 6)}...{addr.slice(-4)}
                                                     </span>

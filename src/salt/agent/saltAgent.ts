@@ -270,11 +270,12 @@ export class SaltAgent {
   private async _sweepDeposits() {
     if (this.depositsQueue.length === 0) return;
 
-    if (this.nudgeListener.getIsProcessingNudge()) return;
+    if (!this.nudgeListener || this.nudgeListener.getIsProcessingNudge()) return;
     console.log(
       "agent is currently not processing a nudge, sweep can go ahead..."
     );
     const deposit = this.depositsQueue.shift();
+    if (!deposit) return;
 
     this.nudgeListener.disableNudgeListener();
     try {

@@ -329,7 +329,7 @@ export function usePearAuth() {
       if (progress?.agentWalletAddress) {
         // Always generate fresh typed data with new nonce
         const typedData = getApproveAgentTypedData(progress.agentWalletAddress);
-        setState((prev) => ({ ...prev, step3TypedData: typedData, agentWalletAddress: progress.agentWalletAddress }));
+        setState((prev) => ({ ...prev, step3TypedData: typedData, agentWalletAddress: progress.agentWalletAddress ?? null }));
         return typedData;
       }
       return null;
