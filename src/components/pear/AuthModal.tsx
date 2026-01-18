@@ -388,7 +388,7 @@ export function AuthModal({ isOpen, onClose, onAuthComplete }: AuthModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="card max-w-lg w-full p-6 relative">
+      <div className="max-w-lg w-full p-6 relative bg-[#0a0a0a] border border-[var(--card-border)] rounded-lg">
         {/* Close button */}
         <button
           onClick={handleClose}
