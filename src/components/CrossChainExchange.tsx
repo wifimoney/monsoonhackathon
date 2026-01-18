@@ -67,8 +67,25 @@ const ASSETS: Record<number, { symbol: string; name: string; address: string; de
     ],
 };
 
-// Map chain IDs to LiFi chain identifiers (uppercase format for token API)
-const LIFI_CHAIN_MAP: Record<number, string> = {
+// LiFi API key from environment variable
+const LIFI_API_KEY = process.env.NEXT_PUBLIC_LIFI_API_KEY || process.env.LIFI_API_KEY || '';
+
+// Get chain IDs from environment variable (comma-separated, lines 5-6 of .env)
+// Example: NEXT_PUBLIC_LIFI_CHAINS="1,42161,10,137,8453,56,43114,999"
+const getEnvChainIds = (): number[] => {
+    const envChains = process.env.NEXT_PUBLIC_LIFI_CHAINS || process.env.LIFI_CHAINS;
+    if (!envChains) {
+        // Default to all supported chains if env var not set
+        return [1, 42161, 10, 137, 8453, 56, 43114, 999];
+    }
+    return envChains.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+};
+
+const ENV_CHAIN_IDS = getEnvChainIds();
+
+// Map chain IDs to LiFi chain identifiers (will be populated from API)
+// Default fallback values
+let LIFI_CHAIN_MAP: Record<number, string> = {
     1: 'ETH',           // Ethereum
     42161: 'ARB1',      // Arbitrum One
     10: 'OPE',          // Optimism
@@ -190,6 +207,7 @@ interface CrossChainExchangeProps {
 }
 
 export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
+    console.log('[CrossChainExchange] Component rendered/mounted');
     const { isConnected, address, chain } = useAccount();
     const [selectedChain, setSelectedChain] = useState<number | null>(null);
     const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
@@ -205,11 +223,90 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
     const [showDepositDropdown, setShowDepositDropdown] = useState(false); // Deposit dropdown visibility
     const [estimatedReceivedAmount, setEstimatedReceivedAmount] = useState<string>(''); // Estimated USDC received from LiFi route
+    const [lifiChainMap, setLifiChainMap] = useState<Record<number, string>>(LIFI_CHAIN_MAP); // Chain map from LiFi API
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
     const selectedAssetData = availableAssets.find((a) => a.symbol === selectedAsset);
     const isHyperEVMSelected = selectedChain === HYPEREVM.chainId;
+
+    // Fetch chain info from LiFi API on mount
+    useEffect(() => {
+        console.log('[CrossChainExchange] useEffect: Starting to fetch LiFi chains');
+        console.log('[CrossChainExchange] LIFI_API_KEY configured:', !!LIFI_API_KEY);
+        console.log('[CrossChainExchange] ENV_CHAIN_IDS:', ENV_CHAIN_IDS);
+        
+        const fetchLiFiChains = async () => {
+            try {
+                const headers: HeadersInit = {
+                    'Content-Type': 'application/json',
+                };
+                
+                // Add API key header if available
+                if (LIFI_API_KEY) {
+                    headers['x-lifi-api-key'] = LIFI_API_KEY;
+                    console.log('[CrossChainExchange] API key header added');
+                } else {
+                    console.warn('[CrossChainExchange] No API key found - request will proceed without authentication');
+                }
+
+                console.log('[CrossChainExchange] Fetching chains from: https://li.quest/v1/chains');
+                const response = await fetch('https://li.quest/v1/chains', {
+                    method: 'GET',
+                    headers,
+                });
+
+                console.log('[CrossChainExchange] Response status:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    console.error('[CrossChainExchange] Failed to fetch chains from LiFi API:', response.status, response.statusText);
+                    const errorText = await response.text();
+                    console.error('[CrossChainExchange] Error response body:', errorText);
+                    return;
+                }
+
+                const data = await response.json();
+                
+                // Log the full API response for debugging
+                console.log('[CrossChainExchange] LiFi Chains API Response:', JSON.stringify(data, null, 2));
+                console.log('[CrossChainExchange] Total chains received:', data?.chains?.length || 0);
+                
+                if (data?.chains && Array.isArray(data.chains)) {
+                    // Build chain map from API response, filtering by env chain IDs
+                    const chainMap: Record<number, string> = {};
+                    
+                    console.log('[CrossChainExchange] Filtering chains by ENV_CHAIN_IDS:', ENV_CHAIN_IDS);
+                    
+                    data.chains.forEach((chainInfo: any) => {
+                        const chainId = chainInfo.id;
+                        // Only include chains specified in env variable (or all if not specified)
+                        if (!ENV_CHAIN_IDS.length || ENV_CHAIN_IDS.includes(chainId)) {
+                            // Use the chain 'key' from API (e.g., "eth", "pol") and convert to uppercase
+                            if (chainInfo.key) {
+                                chainMap[chainId] = chainInfo.key.toUpperCase();
+                                console.log(`[CrossChainExchange] Added chain: ID=${chainId}, key=${chainInfo.key.toUpperCase()}, name=${chainInfo.name}`);
+                            }
+                        }
+                    });
+                    
+                    console.log('[CrossChainExchange] Final chainMap:', chainMap);
+
+                    // Merge with existing map to keep defaults for chains not in API response
+                    setLifiChainMap({ ...LIFI_CHAIN_MAP, ...chainMap });
+                    console.log('[CrossChainExchange] LiFi chains loaded from API:', Object.keys(chainMap).length, 'chains');
+                } else {
+                    console.warn('[CrossChainExchange] Invalid response structure - chains array not found');
+                }
+            } catch (error) {
+                console.error('[CrossChainExchange] Error fetching chains from LiFi API:', error);
+                if (error instanceof Error) {
+                    console.error('[CrossChainExchange] Error details:', error.message, error.stack);
+                }
+            }
+        };
+
+        fetchLiFiChains();
+    }, []);
 
     // Calculate estimated received amount when amount/chain/asset changes (for cross-chain exchange)
     useEffect(() => {
@@ -234,7 +331,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 }
 
                 // Get LiFi chain identifiers for token endpoint (uses uppercase chain keys like "ETH")
-                const toChainKey = LIFI_CHAIN_MAP[HYPEREVM.chainId] || HYPEREVM.chainId.toString();
+                const toChainKey = lifiChainMap[HYPEREVM.chainId] || HYPEREVM.chainId.toString();
 
                 // Get token info from LiFi API to verify decimals
                 const fromTokenAddress = assetData.address === '0x0000000000000000000000000000000000000000' 
@@ -242,28 +339,14 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     : assetData.address.toLowerCase();
                 const toTokenAddress = HYPEREVM.usdcAddress.toLowerCase();
 
-                // Fetch token info for destination USDC to get decimals using token API
-                // Token API uses: chain={CHAIN_KEY}&token={TOKEN_SYMBOL} (e.g., "ETH" and "USDC")
-                let toTokenDecimals = 6; // Default USDC decimals
-                try {
-                    const tokenResponse = await fetch(
-                        `https://li.quest/v1/token?chain=${toChainKey}&token=USDC`
-                    );
-                    if (tokenResponse.ok) {
-                        const tokenData = await tokenResponse.json();
-                        if (tokenData?.decimals) {
-                            toTokenDecimals = tokenData.decimals;
-                        }
-                    }
-                } catch (tokenError) {
-                    console.warn('[CrossChainExchange] Could not fetch token info, using default decimals:', tokenError);
-                }
-
                 // Convert amount to token units (as string for API)
                 const tokenAmount = parseTokenAmount(amount, assetData.decimals);
 
-                // Fetch quote from LiFi API to get estimated received amount
-                // Quote endpoint uses numeric chain IDs (same as SDK)
+                // Prepare API calls for batch execution
+                // Token API uses: chain={CHAIN_KEY}&token={TOKEN_SYMBOL} (e.g., "ETH" and "USDC")
+                const tokenApiUrl = `https://li.quest/v1/token?chain=${toChainKey}&token=USDC`;
+                
+                // Quote API uses numeric chain IDs
                 const quoteParams = new URLSearchParams({
                     fromChain: selectedChain.toString(),
                     toChain: HYPEREVM.chainId.toString(),
@@ -273,9 +356,30 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     fromAddress: address || '',
                     slippage: '0.03', // 3% slippage tolerance
                 });
+                const quoteApiUrl = `https://li.quest/v1/quote?${quoteParams.toString()}`;
 
-                const quoteResponse = await fetch(`https://li.quest/v1/quote?${quoteParams.toString()}`);
-                
+                // Batch API calls in parallel using Promise.all
+                const [tokenResponse, quoteResponse] = await Promise.all([
+                    fetch(tokenApiUrl).catch(() => null), // Token API is optional
+                    fetch(quoteApiUrl), // Quote API is required
+                ]);
+
+                // Process token response (optional - for decimals)
+                let toTokenDecimals = 6; // Default USDC decimals
+                if (tokenResponse?.ok) {
+                    try {
+                        const tokenData = await tokenResponse.json();
+                        if (tokenData?.decimals) {
+                            toTokenDecimals = tokenData.decimals;
+                        }
+                    } catch (tokenError) {
+                        console.warn('[CrossChainExchange] Could not parse token info, using default decimals:', tokenError);
+                    }
+                } else if (tokenResponse === null) {
+                    console.warn('[CrossChainExchange] Token API call failed, using default decimals');
+                }
+
+                // Process quote response (required)
                 if (!quoteResponse.ok) {
                     throw new Error(`LiFi API error: ${quoteResponse.status} ${quoteResponse.statusText}`);
                 }

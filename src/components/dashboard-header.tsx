@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAccount, useDisconnect } from "wagmi"
+import { readContract } from "@wagmi/core"
+import { wagmiConfig } from "@/lib/wagmi"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -31,11 +33,36 @@ const navItems = [
 const walletActions = [
   { name: "Deposit", icon: ArrowDownToLine },
   { name: "Bridge", icon: RefreshCw },
-  { name: "Swap", icon: ArrowLeftRight },
-  { name: "Buy", icon: CreditCard },
-  { name: "Transfer", icon: Send },
   { name: "Withdraw", icon: ArrowUpFromLine },
 ]
+
+// HyperEVM USDC address and chain ID
+const HYPEREVM_CHAIN_ID = 999
+const HYPEREVM_USDC_ADDRESS = "0xb88339CB7199b77E23DB6E890353E22632Ba630f" as `0x${string}`
+const USDC_DECIMALS = 6
+
+// ERC20 balanceOf ABI
+const ERC20_BALANCE_ABI = [
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const
+
+// Format token amount from raw to human-readable (with 3 decimal places)
+const formatTokenAmount = (amount: string, decimals: number): string => {
+  if (!amount || amount === "0") return "0.000"
+  const padded = amount.padStart(decimals + 1, "0")
+  const whole = padded.slice(0, -decimals) || "0"
+  const fraction = padded.slice(-decimals)
+  
+  // Convert to number and format to 3 decimal places
+  const numericValue = parseFloat(`${whole}.${fraction}`)
+  return numericValue.toFixed(3)
+}
 
 export function DashboardHeader() {
   const pathname = usePathname()
@@ -44,11 +71,76 @@ export function DashboardHeader() {
   const { disconnect } = useDisconnect()
   const [showCrossChainModal, setShowCrossChainModal] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [usdcBalance, setUsdcBalance] = useState<string | null>(null)
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false)
+  const previousBalanceRef = useRef<string | null>(null)
 
   // Ensure component is mounted for portal
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Fetch USDC balance on HyperEVM
+  useEffect(() => {
+    const fetchUSDCBalance = async () => {
+      if (!isConnected || !address) {
+        setUsdcBalance(null)
+        previousBalanceRef.current = null
+        setIsLoadingBalance(false)
+        return
+      }
+
+      // Only show loading on the very first load when we have no previous balance
+      // For periodic refreshes, fetch silently without showing loading
+      const hasPreviousBalance = previousBalanceRef.current !== null
+      
+      if (!hasPreviousBalance) {
+        setIsLoadingBalance(true)
+      }
+
+      try {
+        const balance = await readContract(wagmiConfig, {
+          address: HYPEREVM_USDC_ADDRESS,
+          abi: ERC20_BALANCE_ABI,
+          functionName: "balanceOf",
+          args: [address as `0x${string}`],
+          chainId: HYPEREVM_CHAIN_ID,
+        })
+
+        const formattedBalance = formatTokenAmount(balance.toString(), USDC_DECIMALS)
+        const newBalanceNum = parseFloat(formattedBalance)
+        
+        if (!hasPreviousBalance) {
+          // First load - always set and clear loading
+          setUsdcBalance(formattedBalance)
+          previousBalanceRef.current = formattedBalance
+          setIsLoadingBalance(false)
+        } else if (previousBalanceRef.current !== null) {
+          // Subsequent loads - check difference before updating
+          const currentBalanceNum = parseFloat(previousBalanceRef.current)
+          const difference = Math.abs(newBalanceNum - currentBalanceNum)
+          
+          // Only update if difference is more than 0.0001
+          // Don't show loading for small differences (< 0.001) as per user requirement
+          if (difference > 0.0001) {
+            setUsdcBalance(formattedBalance)
+            previousBalanceRef.current = formattedBalance
+          }
+          // If difference is <= 0.0001, don't update (prevents unnecessary re-renders)
+        }
+      } catch (error) {
+        console.error("[DashboardHeader] Error fetching USDC balance:", error)
+        // Only clear balance on error if we don't have a previous value
+        if (!hasPreviousBalance) {
+          setUsdcBalance(null)
+        }
+        setIsLoadingBalance(false)
+      }
+    }
+
+    // Fetch balance once on mount or when address changes
+    fetchUSDCBalance()
+  }, [isConnected, address])
 
   const handleDisconnect = () => {
     disconnect()
@@ -109,6 +201,20 @@ export function DashboardHeader() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48 bg-black/95 border-border/60 backdrop-blur-xl">
+              {/* USDC Balance Display */}
+              <div className="px-3 py-2 border-b border-border/40">
+                <div className="text-xs text-muted-foreground mb-1">USDC on HyperEVM</div>
+                <div className="text-sm font-semibold text-foreground">
+                  {isLoadingBalance ? (
+                    <span className="text-muted-foreground">Loading...</span>
+                  ) : usdcBalance !== null ? (
+                    `${usdcBalance} USDC`
+                  ) : (
+                    <span className="text-muted-foreground">--</span>
+                  )}
+                </div>
+              </div>
+              <DropdownMenuSeparator className="bg-border/40" />
               {walletActions.map((action) => (
                 <DropdownMenuItem
                   key={action.name}
