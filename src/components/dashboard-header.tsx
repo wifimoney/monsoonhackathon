@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -17,6 +17,7 @@ import {
 import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CreditCard, RefreshCw, Send, Wallet } from "lucide-react"
 import { ConnectWallet } from "./connect-wallet"
 import { CrossChainExchange } from "./cross-chain-exchange"
+import { getHyperliquidAccountState } from "@/lib/pear-client"
 
 const navItems = [
   { name: "Agent", href: "/dashboard/agent" },
@@ -67,7 +68,7 @@ export function DashboardHeader() {
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-black/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
-        <Link href="/dashboard/trade" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <svg className="h-7 w-7 text-primary" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M16 4L4 12v8l12 8 12-8v-8L16 4z" />
             <path d="M4 12l12 8 12-8" />

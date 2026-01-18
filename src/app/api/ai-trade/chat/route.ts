@@ -46,6 +46,9 @@ interface TokenData {
 /**
  * Fetches available tokens from the internal tokens endpoint
  */
+// Tokens to exclude from AI suggestions
+const EXCLUDED_TOKENS = new Set(['MATIC']);
+
 async function fetchAvailableTokens(): Promise<TokenData[]> {
   try {
     const response = await fetch('https://api.hyperliquid.xyz/info', {
@@ -69,6 +72,9 @@ async function fetchAvailableTokens(): Promise<TokenData[]> {
       const assetCtx = assetContexts[i];
 
       if (!assetCtx) continue;
+
+      // Skip excluded tokens
+      if (EXCLUDED_TOKENS.has(assetMeta.name)) continue;
 
       const dailyVolumeUsd = parseFloat(assetCtx.dayNtlVlm);
 
@@ -116,7 +122,31 @@ function extractTradeProposal(content: string): Omit<TradeProposal, 'id' | 'crea
   }
 
   try {
-    const parsed = JSON.parse(jsonMatch[1]);
+    // Sanitize JSON: fix common AI formatting errors
+    let jsonStr = jsonMatch[1];
+
+    // Convert M/K suffixes to actual numbers (e.g., "2.09M" -> "2090000", "500K" -> "500000")
+    jsonStr = jsonStr.replace(/:\s*"?(\d+(?:\.\d+)?)\s*M"?(?=\s*[,}\]])/gi, (match, num) => {
+      const value = Math.round(parseFloat(num) * 1_000_000);
+      return `: ${value}`;
+    });
+    jsonStr = jsonStr.replace(/:\s*"?(\d+(?:\.\d+)?)\s*K"?(?=\s*[,}\]])/gi, (match, num) => {
+      const value = Math.round(parseFloat(num) * 1_000);
+      return `: ${value}`;
+    });
+
+    // Remove commas from numbers (e.g., "5,000,000" -> "5000000")
+    jsonStr = jsonStr.replace(/:\s*"?(\d{1,3}(?:,\d{3})+)"?(?=\s*[,}\]])/g, (match, num) => {
+      const cleanNum = num.replace(/,/g, '');
+      return `: ${cleanNum}`;
+    });
+
+    // Also handle numbers with commas in property values without quotes
+    jsonStr = jsonStr.replace(/(\d),(\d{3})/g, '$1$2');
+
+    console.log('[extractTradeProposal] Sanitized JSON:', jsonStr.substring(0, 200));
+
+    const parsed = JSON.parse(jsonStr);
 
     // Validate basic structure
     if (!parsed.longPositions && !parsed.shortPositions) {

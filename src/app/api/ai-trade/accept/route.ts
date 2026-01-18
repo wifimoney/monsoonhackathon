@@ -123,8 +123,7 @@ async function executePearTrade(
       let errorMessage = errorData.error || errorData.message || `Pear API error: ${response.status}`;
 
       if (response.status === 500) {
-        // Common causes of 500 errors from Pear
-        errorMessage = `Trade execution failed. Possible causes: (1) Agent wallet not approved on Hyperliquid - re-authenticate with Pear Protocol, (2) Builder fee not approved, (3) Insufficient USDC balance on Hyperliquid. Original error: ${errorMessage}`;
+        errorMessage = 'Insufficient Hyperliquid USDC balance';
       } else if (response.status === 401) {
         errorMessage = 'Authentication expired. Please re-authenticate with Pear Protocol.';
       } else if (response.status === 403) {

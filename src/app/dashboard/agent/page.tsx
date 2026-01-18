@@ -186,22 +186,28 @@ export default function AgentPage() {
       )}
 
       {/* Input Area */}
-      <div className="border-t border-border/50 pt-4">
-        <div className="flex gap-3">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Describe your trade idea..."
-            className="flex-1 bg-card border-border/50 focus-visible:ring-primary text-sm"
-          />
-          <Button
-            onClick={() => handleSend()}
-            disabled={isLoading}
-            className="bg-gradient-to-r from-primary to-red-600 hover:from-primary/90 hover:to-red-600/90"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+      <div className="relative pt-4">
+        {/* Gradient line at top */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+
+        <div className="rounded-2xl bg-card/30 backdrop-blur-sm border border-border/30 p-3">
+          <div className="flex gap-3 items-center">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Describe your trade idea..."
+              className="flex-1 bg-transparent border-none shadow-none text-sm placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+            />
+            <Button
+              onClick={() => handleSend()}
+              disabled={isLoading}
+              size="icon"
+              className="h-10 w-10 rounded-xl bg-gradient-to-r from-primary to-red-600 hover:from-primary/90 hover:to-red-600/90 hover:shadow-[0_0_20px_rgba(220,38,38,0.3)] transition-all duration-300"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
