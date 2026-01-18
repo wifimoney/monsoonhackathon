@@ -1,109 +1,56 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useAccount } from "wagmi"
 import { DataCard } from "@/components/data-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Wallet, ArrowUpRight, ArrowDownLeft, Lock, Loader2, ShieldCheck, AlertTriangle } from "lucide-react"
-import { usePoolInfo, formatTokenAmount, parseTokenAmount } from "@/lib/contracts/hooks"
+import { Wallet, ArrowUpRight, ArrowDownLeft, Lock, Loader2 } from "lucide-react"
+import {
+  usePoolInfo,
+  useLPBalance,
+  useTokenBalance,
+  useDeposit,
+  useWithdraw,
+  useApproveToken,
+  formatTokenAmount,
+  parseTokenAmount
+} from "@/lib/contracts/hooks"
 import { HYPEREVM } from "@/lib/contracts/addresses"
-import { toast } from "sonner"
-
-interface SaltSession {
-  authenticated: boolean;
-  activeAccountId: string | null;
-  activeOrgId: string | null;
-  activeAccountAddress: string | null;
-}
-
-interface SaltBalances {
-  address: string;
-  native: { balance: string };
-  tokens: Array<{ symbol: string, address: string, balance: string }>;
-}
 
 export default function VaultPage() {
-  const { isConnected: isWalletConnected } = useAccount()
+  const { address, isConnected } = useAccount()
   const [depositAmount, setDepositAmount] = useState("")
   const [withdrawAmount, setWithdrawAmount] = useState("")
-  const [selectedToken, setSelectedToken] = useState<string>(HYPEREVM.TOKEN0)
 
-  // Salt State
-  const [session, setSession] = useState<SaltSession | null>(null);
-  const [balances, setBalances] = useState<SaltBalances | null>(null);
-  const [isDepositing, setIsDepositing] = useState(false);
-  const [isSessionLoading, setIsSessionLoading] = useState(true);
-
-  // Contract reads (Global Pool Stats)
+  // Contract reads
   const { data: poolInfo, isLoading: poolLoading } = usePoolInfo()
+  const { data: lpBalance } = useLPBalance(address)
+  const { data: token0Balance } = useTokenBalance(HYPEREVM.TOKEN0, address)
+  const { data: token1Balance } = useTokenBalance(HYPEREVM.TOKEN1, address)
 
-  // 1. Fetch Salt Session
-  useEffect(() => {
-    const fetchSession = async () => {
-      try {
-        const res = await fetch('/api/salt/session');
-        const data = await res.json();
-        setSession(data);
-      } catch (e) {
-        console.error("Failed to load session", e);
-      } finally {
-        setIsSessionLoading(false);
-      }
-    };
-    fetchSession();
-  }, []);
-
-  // 2. Fetch Salt Balances
-  useEffect(() => {
-    const fetchBalances = async () => {
-      if (!session?.activeAccountId || !session?.activeOrgId) return;
-      try {
-        const res = await fetch(`/api/vault/balances?orgId=${session.activeOrgId}&accountId=${session.activeAccountId}`);
-        const data = await res.json();
-        setBalances(data);
-      } catch (e) {
-        console.error("Failed to load balances", e);
-      }
-    };
-    fetchBalances();
-    // Poll every 10s
-    const interval = setInterval(fetchBalances, 10000);
-    return () => clearInterval(interval);
-  }, [session]);
+  // Contract writes
+  const { approve, isPending: isApproving } = useApproveToken()
+  const { deposit, isPending: isDepositing, isConfirming: isDepositConfirming } = useDeposit()
+  const { withdraw, isPending: isWithdrawing, isConfirming: isWithdrawConfirming } = useWithdraw()
 
   const handleDeposit = async () => {
-    if (!session?.authenticated || !depositAmount) return;
+    if (!address || !depositAmount) return
+    const amount = parseTokenAmount(depositAmount, 6) // Assuming USDC decimals
 
-    setIsDepositing(true);
-    try {
-      const res = await fetch('/api/vault/deposit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orgId: session.activeOrgId,
-          accountId: session.activeAccountId,
-          tokenAddress: selectedToken,
-          amount: parseTokenAmount(depositAmount, 6).toString()
-        })
-      });
+    // Approve first
+    await approve(HYPEREVM.TOKEN0, amount)
+    await approve(HYPEREVM.TOKEN1, amount)
 
-      const data = await res.json();
+    // Then deposit
+    deposit(amount, amount, address)
+  }
 
-      if (data.success) {
-        toast.success("Deposit Initiated via Salt", {
-          description: `Tx: ${data.txHash?.slice(0, 10)}...`
-        });
-        setDepositAmount("");
-      } else {
-        toast.error("Deposit Failed", { description: data.error || "Unknown error" });
-      }
-    } catch (e) {
-      toast.error("Error submitting deposit");
-    } finally {
-      setIsDepositing(false);
-    }
+  const handleWithdraw = async () => {
+    if (!address || !withdrawAmount) return
+    const amount = parseTokenAmount(withdrawAmount, 18)
+    withdraw(amount, address)
   }
 
   // Format pool data
@@ -111,40 +58,11 @@ export default function VaultPage() {
   const reserve1 = poolInfo ? formatTokenAmount(poolInfo[4], 18) : "0"
   const totalSupply = poolInfo ? formatTokenAmount(poolInfo[10], 18) : "0"
   const oraclePrice = poolInfo ? formatTokenAmount(poolInfo[11], 18) : "0"
-
-  // User Data (from Salt)
-  const saltUSDC = balances?.tokens.find(t => t.symbol === "mUSDC")?.balance || "0";
-  // For LP balance, we'd need to fetch the LP token balance of the salt account. 
-  // Our current API only returns Token0/Token1. 
-  // TODO: Add LP token to balances API. For now, show placeholder.
-  const saltLP = "0.00";
+  const userLPBalance = lpBalance ? formatTokenAmount(lpBalance, 18) : "0"
+  const userToken0 = token0Balance ? formatTokenAmount(token0Balance, 6) : "0"
 
   return (
     <div className="space-y-8">
-      {/* Session Status */}
-      <div className="flex items-center justify-between bg-card/30 p-4 rounded-lg border border-border/50">
-        <div className="flex items-center gap-2">
-          {isSessionLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          ) : session?.authenticated ? (
-            <>
-              <ShieldCheck className="h-5 w-5 text-emerald-400" />
-              <div>
-                <p className="text-sm font-medium text-emerald-400">Salt Guarded Session Active</p>
-                <p className="text-xs text-muted-foreground font-mono">
-                  Vault: {session.activeAccountAddress?.slice(0, 8)}...{session.activeAccountAddress?.slice(-6)}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <AlertTriangle className="h-5 w-5 text-yellow-400" />
-              <p className="text-sm text-yellow-400">Salt Session Not Connected. Env vars missing.</p>
-            </>
-          )}
-        </div>
-      </div>
-
       {/* Stats Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <DataCard
@@ -166,16 +84,6 @@ export default function VaultPage() {
           title="Oracle Price"
           value={poolLoading ? "Loading..." : `$${parseFloat(oraclePrice).toFixed(2)}`}
           subtitle="From HyperCore"
-        />
-        <DataCard
-          title="Yield Allocation (Token0)"
-          value={poolLoading ? "Loading..." : `${poolInfo ? formatTokenAmount(poolInfo[12], 6) : "0"}`}
-          subtitle="In Strategy"
-        />
-        <DataCard
-          title="Yield Allocation (Token1)"
-          value={poolLoading ? "Loading..." : `${poolInfo ? formatTokenAmount(poolInfo[13], 18) : "0"}`}
-          subtitle="In Strategy"
         />
       </div>
 
@@ -209,38 +117,72 @@ export default function VaultPage() {
                 </div>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Salt Vault Balance</span>
-                <span className="font-mono">{parseFloat(saltUSDC).toLocaleString()} mUSDC</span>
+                <span className="text-muted-foreground">Available Balance</span>
+                <span className="font-mono">{parseFloat(userToken0).toLocaleString()} mUSDC</span>
               </div>
               <Button
                 onClick={handleDeposit}
-                disabled={!session?.authenticated || isDepositing}
-                className="w-full bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90 font-medium tracking-tight"
+                disabled={!isConnected || isApproving || isDepositing || isDepositConfirming}
+                className="w-full bg-gradient-to-r from-primary to-red-600 hover:from-primary/90 hover:to-red-600/90 font-medium tracking-tight"
               >
-                {isDepositing ? (
+                {isApproving || isDepositing || isDepositConfirming ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Executing via Salt...
+                    {isApproving ? "Approving..." : isDepositing ? "Depositing..." : "Confirming..."}
                   </>
                 ) : (
                   <>
-                    <Lock className="mr-2 h-4 w-4" />
-                    Secure Deposit
+                    <ArrowDownLeft className="mr-2 h-4 w-4" />
+                    Deposit to Vault
                   </>
                 )}
               </Button>
             </TabsContent>
             <TabsContent value="withdraw" className="mt-6 space-y-4">
-              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
-                <p className="text-sm text-yellow-400">Withdrawals are managed via Policy Proposal only in this demo.</p>
+              <div>
+                <label className="text-caption mb-2 block">LP Amount</label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    className="bg-black/50 border-border/50 text-lg font-mono pr-16"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
+                    mLP
+                  </span>
+                </div>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Your LP Balance</span>
+                <span className="font-mono">{parseFloat(userLPBalance).toFixed(4)} mLP</span>
+              </div>
+              <Button
+                onClick={handleWithdraw}
+                disabled={!isConnected || isWithdrawing || isWithdrawConfirming}
+                className="w-full bg-transparent font-medium tracking-tight"
+                variant="outline"
+              >
+                {isWithdrawing || isWithdrawConfirming ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isWithdrawing ? "Withdrawing..." : "Confirming..."}
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpRight className="mr-2 h-4 w-4" />
+                    Withdraw from Vault
+                  </>
+                )}
+              </Button>
             </TabsContent>
           </Tabs>
         </div>
 
         {/* Your Position */}
         <div className="rounded-xl border border-border/50 bg-card/50 p-6">
-          <h2 className="mb-4">Vault Position</h2>
+          <h2 className="mb-4">Your Position</h2>
           <div className="space-y-4">
             <div className="flex items-center justify-between p-4 rounded-lg bg-black/30 border border-border/30">
               <div className="flex items-center gap-3">
@@ -248,17 +190,23 @@ export default function VaultPage() {
                   <Wallet className="h-4 w-4 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-sm">Monsoon LP (Salt Vault)</p>
-                  <p className="text-caption font-mono">-- mLP</p>
+                  <p className="font-medium text-sm">Monsoon LP</p>
+                  <p className="text-caption font-mono">{parseFloat(userLPBalance).toFixed(4)} mLP</p>
                 </div>
               </div>
               <div className="text-right">
                 <p className="text-emerald-400 font-mono font-medium text-sm">
-                  {session?.authenticated ? "Secured" : "Unknown"}
+                  {isConnected ? "Active" : "Not Connected"}
                 </p>
-                <p className="text-caption">Auto-Compounding</p>
+                <p className="text-caption">Flexible</p>
               </div>
             </div>
+
+            {!isConnected && (
+              <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                <p className="text-yellow-400 text-sm">Connect your wallet to view your position and interact with the vault.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

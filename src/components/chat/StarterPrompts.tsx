@@ -4,7 +4,6 @@ import { Bot } from 'lucide-react';
 
 interface StarterPromptsProps {
   onSelectPrompt: (prompt: string) => void;
-  hasMessages?: boolean;
 }
 
 const STARTER_PROMPTS = [
@@ -13,9 +12,7 @@ const STARTER_PROMPTS = [
   'DeFi will outperform memecoins',
 ];
 
-export function StarterPrompts({ onSelectPrompt, hasMessages = false }: StarterPromptsProps) {
-  if (hasMessages) return null;
-
+export function StarterPrompts({ onSelectPrompt }: StarterPromptsProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 space-y-8">
       {/* Icon with glow effect */}

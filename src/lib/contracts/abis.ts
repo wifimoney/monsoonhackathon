@@ -19,8 +19,6 @@ export const MONSOON_ALM_ABI = [
             { name: 'feeRate', type: 'uint256' },
             { name: 'totalSupply', type: 'uint256' },
             { name: 'oraclePrice', type: 'uint256' },
-            { name: 'yieldAlloc0', type: 'uint256' },
-            { name: 'yieldAlloc1', type: 'uint256' },
         ],
     },
     {

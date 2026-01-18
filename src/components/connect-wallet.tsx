@@ -137,14 +137,14 @@ export function ConnectWallet() {
                                                     setShowWalletSelector(false);
                                                 }}
                                                 className={`w-full text-left px-4 py-3 hover:bg-[var(--card-border)] transition-colors flex items-center justify-between gap-3 ${addr.toLowerCase() === address?.toLowerCase()
-                                                    ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]'
-                                                    : ''
+                                                        ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]'
+                                                        : ''
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
                                                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${addr.toLowerCase() === address?.toLowerCase()
-                                                        ? 'bg-[var(--primary)]'
-                                                        : 'bg-[var(--muted)]'
+                                                            ? 'bg-[var(--primary)]'
+                                                            : 'bg-[var(--muted)]'
                                                         }`} />
                                                     <span className="font-mono text-sm truncate">
                                                         {addr.slice(0, 6)}...{addr.slice(-4)}
@@ -288,77 +288,5 @@ export function ConnectWallet() {
     }
 
     // Use RainbowKit's ConnectButton for unified wallet connection
-    return (
-        <ConnectButton.Custom>
-            {({
-                account,
-                chain,
-                openAccountModal,
-                openChainModal,
-                openConnectModal,
-                authenticationStatus,
-                mounted,
-            }) => {
-                const ready = mounted && authenticationStatus !== 'loading';
-                const connected =
-                    ready &&
-                    account &&
-                    chain &&
-                    (!authenticationStatus ||
-                        authenticationStatus === 'authenticated');
-
-                return (
-                    <div
-                        {...(!ready && {
-                            'aria-hidden': true,
-                            'style': {
-                                opacity: 0,
-                                pointerEvents: 'none',
-                                userSelect: 'none',
-                            },
-                        })}
-                    >
-                        {(() => {
-                            if (!connected) {
-                                return (
-                                    <button
-                                        onClick={openConnectModal}
-                                        type="button"
-                                        className="bg-[#DC143C] hover:bg-[#B01030] text-white font-medium py-2 px-4 rounded-lg transition-all shadow-[0_0_15px_rgba(220,20,60,0.3)] hover:shadow-[0_0_20px_rgba(220,20,60,0.5)]"
-                                    >
-                                        Connect Wallet
-                                    </button>
-                                );
-                            }
-
-                            if (chain.unsupported) {
-                                return (
-                                    <button
-                                        onClick={openChainModal}
-                                        type="button"
-                                        className="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                                    >
-                                        Wrong Network
-                                    </button>
-                                );
-                            }
-
-                            return (
-                                <button
-                                    onClick={openAccountModal}
-                                    type="button"
-                                    className="bg-[#DC143C] hover:bg-[#B01030] text-white font-medium py-2 px-4 rounded-lg transition-all"
-                                >
-                                    {account.displayName}
-                                    {account.displayBalance
-                                        ? ` (${account.displayBalance})`
-                                        : ''}
-                                </button>
-                            );
-                        })()}
-                    </div>
-                );
-            }}
-        </ConnectButton.Custom>
-    );
+    return <ConnectButton />;
 }

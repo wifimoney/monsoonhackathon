@@ -6,47 +6,35 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
-import { useOrderBook, useTicker } from "@/hooks/useHyperliquid"
+
+const asks = [
+  { price: "3,248.50", size: "2.450", total: "7,958.83" },
+  { price: "3,247.80", size: "1.200", total: "3,897.36" },
+  { price: "3,247.20", size: "5.800", total: "18,833.76" },
+  { price: "3,246.90", size: "0.890", total: "2,889.74" },
+  { price: "3,246.50", size: "3.210", total: "10,421.27" },
+]
+
+const bids = [
+  { price: "3,245.80", size: "4.120", total: "13,372.70" },
+  { price: "3,245.20", size: "1.890", total: "6,133.43" },
+  { price: "3,244.80", size: "6.540", total: "21,220.99" },
+  { price: "3,244.10", size: "2.100", total: "6,812.61" },
+  { price: "3,243.50", size: "0.750", total: "2,432.63" },
+]
 
 export default function OrderbookPage() {
   const [orderType, setOrderType] = useState<"limit" | "market">("limit")
   const [side, setSide] = useState<"buy" | "sell">("buy")
 
-  // Fetch real data
-  const { data: orderBook, isLoading } = useOrderBook("ETH");
-  const { price: currentPrice } = useTicker("ETH");
-
-  const formatPrice = (p: string) => parseFloat(p).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const formatSize = (s: string) => parseFloat(s).toFixed(4);
-  const calculateTotal = (p: string, s: string) => (parseFloat(p) * parseFloat(s)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  // Process asks (sells) - reverse to show lowest ask at bottom (closest to spread)
-  // Hyperliquid returns [bids, asks]. bids are high to low, asks are low to high.
-  // We want asks displayed from high to low usually in a vertical list, 
-  // but typically orderbooks show:
-  // ASKS (High -> Low)
-  // SPREAD
-  // BIDS (High -> Low)
-  // Wait, standard vertical orderbook:
-  // Asks: Highest Price ... Lowest Price (closest to spread)
-  // Spread
-  // Bids: Highest Price (closest to spread) ... Lowest Price
-
-  // Hyperliquid asks are sorted by price inc (lowest first). 
-  // So we probably want to slice the first 5 (lowest/best asks) and then reverse them for display 
-  // so the lowest ask is at the bottom of the list, just above the spread.
-
-  const asks = orderBook?.levels[1]?.slice(0, 5).reverse() || [];
-  const bids = orderBook?.levels[0]?.slice(0, 5) || [];
-
   return (
     <div className="space-y-8">
       {/* Stats Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <DataCard title="ETH/USDC" value={currentPrice ? `$${formatPrice(currentPrice)}` : "Loading..."} subtitle="HyperCore Oracle" />
+        <DataCard title="ETH/USDC" value="$3,245.80" subtitle="+1.24%" />
         <DataCard title="24h Volume" value="$12.4M" subtitle="ETH/USDC" />
-        <DataCard title="Open Orders" value="0" subtitle="$0.00 total" />
-        <DataCard title="Spread" value="-" subtitle="Calculated" />
+        <DataCard title="Open Orders" value="3" subtitle="$4,500 total" />
+        <DataCard title="Spread" value="0.02%" subtitle="$0.70" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -61,49 +49,39 @@ export default function OrderbookPage() {
           </div>
 
           {/* Asks (Sells) */}
-          <div className="space-y-1 mb-4 flex flex-col justify-end min-h-[160px]">
-            {isLoading ? (
-              <div className="text-center text-muted-foreground text-sm py-4">Loading asks...</div>
-            ) : (
-              asks.map((ask, i) => (
-                <div key={i} className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative">
-                  <div
-                    className="absolute inset-y-0 right-0 bg-red-500/10"
-                    style={{ width: `${Math.min(Number.parseFloat(ask.sz) * 10, 100)}%` }}
-                  />
-                  <span className="text-red-400 font-mono text-sm relative z-10">{formatPrice(ask.px)}</span>
-                  <span className="text-center font-mono text-sm relative z-10">{formatSize(ask.sz)}</span>
-                  <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{calculateTotal(ask.px, ask.sz)}</span>
-                </div>
-              ))
-            )}
+          <div className="space-y-1 mb-4">
+            {asks.map((ask, i) => (
+              <div key={i} className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative">
+                <div
+                  className="absolute inset-y-0 right-0 bg-red-500/10"
+                  style={{ width: `${Math.min(Number.parseFloat(ask.size) * 15, 100)}%` }}
+                />
+                <span className="text-red-400 font-mono text-sm relative z-10">{ask.price}</span>
+                <span className="text-center font-mono text-sm relative z-10">{ask.size}</span>
+                <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{ask.total}</span>
+              </div>
+            ))}
           </div>
 
           {/* Spread */}
           <div className="flex items-center justify-center py-3 border-y border-border/30 my-4">
-            <span className="text-2xl font-bold font-mono tracking-tight">
-              {currentPrice ? formatPrice(currentPrice) : "---.--"}
-            </span>
-            <span className="ml-2 text-emerald-400 font-mono text-sm">Oracle Price</span>
+            <span className="text-2xl font-bold font-mono tracking-tight">3,245.80</span>
+            <span className="ml-2 text-emerald-400 font-mono text-sm">+1.24%</span>
           </div>
 
           {/* Bids (Buys) */}
-          <div className="space-y-1 min-h-[160px]">
-            {isLoading ? (
-              <div className="text-center text-muted-foreground text-sm py-4">Loading bids...</div>
-            ) : (
-              bids.map((bid, i) => (
-                <div key={i} className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative">
-                  <div
-                    className="absolute inset-y-0 right-0 bg-emerald-500/10"
-                    style={{ width: `${Math.min(Number.parseFloat(bid.sz) * 10, 100)}%` }}
-                  />
-                  <span className="text-emerald-400 font-mono text-sm relative z-10">{formatPrice(bid.px)}</span>
-                  <span className="text-center font-mono text-sm relative z-10">{formatSize(bid.sz)}</span>
-                  <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{calculateTotal(bid.px, bid.sz)}</span>
-                </div>
-              ))
-            )}
+          <div className="space-y-1">
+            {bids.map((bid, i) => (
+              <div key={i} className="grid grid-cols-3 py-1 px-2 rounded hover:bg-white/5 cursor-pointer relative">
+                <div
+                  className="absolute inset-y-0 right-0 bg-emerald-500/10"
+                  style={{ width: `${Math.min(Number.parseFloat(bid.size) * 15, 100)}%` }}
+                />
+                <span className="text-emerald-400 font-mono text-sm relative z-10">{bid.price}</span>
+                <span className="text-center font-mono text-sm relative z-10">{bid.size}</span>
+                <span className="text-right text-muted-foreground font-mono text-sm relative z-10">{bid.total}</span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -124,14 +102,14 @@ export default function OrderbookPage() {
           <div className="grid grid-cols-2 gap-2 mb-6">
             <Button
               variant={side === "buy" ? "default" : "outline"}
-              className={cn("font-medium tracking-tight", side === "buy" ? "bg-emerald-600 hover:bg-emerald-700" : "")}
+              className={cn("font-medium tracking-tight", side === "buy" && "bg-emerald-600 hover:bg-emerald-700")}
               onClick={() => setSide("buy")}
             >
               Buy
             </Button>
             <Button
               variant={side === "sell" ? "default" : "outline"}
-              className={cn("font-medium tracking-tight", side === "sell" ? "bg-red-600 hover:bg-red-700" : "")}
+              className={cn("font-medium tracking-tight", side === "sell" && "bg-red-600 hover:bg-red-700")}
               onClick={() => setSide("sell")}
             >
               Sell
@@ -146,7 +124,7 @@ export default function OrderbookPage() {
                   <Input
                     type="number"
                     placeholder="0.00"
-                    defaultValue={currentPrice || "3000.00"}
+                    defaultValue="3245.80"
                     className="bg-black/50 border-border/50 font-mono pr-16"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
@@ -182,7 +160,6 @@ export default function OrderbookPage() {
             </div>
 
             <Button
-              disabled={true} // Disabled for now as this is just visualization
               className={cn(
                 "w-full font-medium tracking-tight",
                 side === "buy" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700",
@@ -190,9 +167,6 @@ export default function OrderbookPage() {
             >
               {side === "buy" ? "Buy ETH" : "Sell ETH"}
             </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Trading enabled via Agent Chat only
-            </p>
           </div>
         </div>
       </div>

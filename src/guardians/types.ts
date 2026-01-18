@@ -177,7 +177,7 @@ export const GUARDIAN_PRESETS: Record<GuardianPreset, GuardiansConfig> = {
         exposure: { enabled: true, maxPerAsset: 500 },
         venue: {
             enabled: true,
-            allowedContracts: ['0x1111111111111111111111111111111111111111', 'ETH-PERP', 'BTC-PERP', 'PORTFOLIO_TRADE'], // Added standard perps
+            allowedContracts: ['0x1111111111111111111111111111111111111111'],
             allowedRecipients: [],
         },
         rate: { enabled: true, maxPerDay: 10, cooldownSeconds: 60 },
@@ -190,7 +190,7 @@ export const GUARDIAN_PRESETS: Record<GuardianPreset, GuardiansConfig> = {
         exposure: { enabled: true, maxPerAsset: 250 },
         venue: {
             enabled: true,
-            allowedContracts: ['0x1111111111111111111111111111111111111111', 'ETH-PERP', 'BTC-PERP', 'PORTFOLIO_TRADE'],
+            allowedContracts: ['0x1111111111111111111111111111111111111111'],
             allowedRecipients: [],
         },
         rate: { enabled: true, maxPerDay: 5, cooldownSeconds: 120 },
