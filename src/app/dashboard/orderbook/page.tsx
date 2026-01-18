@@ -290,7 +290,7 @@ export default function OrderbookPage() {
                 <Input
                   type="number"
                   placeholder="0.00"
-                  defaultValue={currentPrice || "3000.00"}
+                  defaultValue={orderbook?.midPrice || "3000.00"}
                   className="bg-black/50 border-border/50 font-mono pr-16"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
