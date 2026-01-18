@@ -29,32 +29,59 @@ export class GuardianService {
 
     /**
      * Get the active configuration for the user
-     * Fetches from SQLite if available, otherwise default
+     * Fetches from SQLite if available, merges with defaults
      */
     private static async getConfig(): Promise<GuardiansConfig> {
+        const defaultConfig = GUARDIAN_PRESETS.default;
+
         try {
-            // In a real app, context (userId/orgId) would be passed in or retrieved from request context
-            // For this hackathon, we use the env vars as the "active" session context
             const orgId = process.env.SALT_ORG_ID;
             const accountId = process.env.SALT_ACCOUNT_ID;
 
             if (orgId && accountId) {
-                // Dynamic import to avoid circular dep issues if any, or just clean separation
                 const { getDatabase } = await import('@/audit/db');
                 const db = getDatabase();
 
                 const row = db.prepare('SELECT config_json FROM guardrails WHERE org_id = ? AND account_id = ?').get(orgId, accountId) as { config_json: string } | undefined;
 
                 if (row) {
-                    return JSON.parse(row.config_json);
+                    const savedConfig = JSON.parse(row.config_json);
+
+                    // If saved config has full GuardiansConfig structure, use it
+                    if (savedConfig.spend && savedConfig.leverage) {
+                        return savedConfig as GuardiansConfig;
+                    }
+
+                    // If saved config only has guardian toggles (from UI), merge with defaults
+                    if (savedConfig.guardians && Array.isArray(savedConfig.guardians)) {
+                        const mergedConfig = { ...defaultConfig };
+
+                        // Map UI guardian IDs to config keys
+                        const guardianMap: Record<string, keyof GuardiansConfig> = {
+                            'maxDrawdown': 'loss',
+                            'whitelistOnly': 'venue',
+                            'rateLimiter': 'rate',
+                            'positionSizeCap': 'spend',
+                            'slippageGuard': 'exposure',
+                            'maxLeverage': 'leverage'
+                        };
+
+                        for (const g of savedConfig.guardians) {
+                            const configKey = guardianMap[g.id];
+                            if (configKey && mergedConfig[configKey]) {
+                                (mergedConfig[configKey] as any).enabled = g.active;
+                            }
+                        }
+
+                        return mergedConfig;
+                    }
                 }
             }
         } catch (error) {
             console.warn("GuardianService: Failed to load config from DB, using default.", error);
         }
 
-        // Default preset fallback
-        return GUARDIAN_PRESETS.default;
+        return defaultConfig;
     }
 
     /**
@@ -95,4 +122,51 @@ export class GuardianService {
             };
         }
     }
+
+    /**
+     * Validate a vault action (deposit/withdraw) against policies
+     */
+    public static async validateVaultAction(request: VaultActionRequest): Promise<ValidationResult> {
+        const config = await this.getConfig();
+
+        // Map vault action to internal ActionIntent
+        // Use SPOT_MARKET_ORDER as a proxy for vault operations
+        const intent: ActionIntent = {
+            type: 'SPOT_MARKET_ORDER',
+            market: `VAULT_${request.tokenSymbol}`,
+            side: request.action === 'deposit' ? 'BUY' : 'SELL',
+            notionalUsd: request.amountUsd,
+            maxSlippageBps: 50, // 0.5% for vault ops
+            validForSeconds: 300,
+            rationale: [`Vault ${request.action} request`],
+            riskNotes: []
+        };
+
+        // Run the check
+        const result = checkGuardrails(intent, config);
+
+        if (result.passed) {
+            return { success: true };
+        } else {
+            const primaryDenial = result.denials[0];
+            const reason = primaryDenial
+                ? `${primaryDenial.name}: ${primaryDenial.reason}`
+                : "Vault policy violation detected";
+
+            return {
+                success: false,
+                reason,
+                denials: result.denials
+            };
+        }
+    }
+}
+
+/**
+ * Interface for vault action requests
+ */
+export interface VaultActionRequest {
+    action: 'deposit' | 'withdraw';
+    amountUsd: number;
+    tokenSymbol: string;
 }

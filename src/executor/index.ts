@@ -7,7 +7,7 @@ import { arbitrumSepolia } from 'viem/chains';
 import { Hyperliquid } from './hyperliquid';
 
 // Import from single source of truth
-import deployedAddresses from '../../contracts/addresses.arbitrum-sepolia.json';
+import deployedAddresses from '../../contracts/addresses.hyperevm-testnet.json';
 
 const CHAIN_ID = deployedAddresses.chainId;
 const RPC_URL = deployedAddresses.rpcUrl;
@@ -23,6 +23,17 @@ interface OrderParams {
     size: number;
 }
 
+interface AuditPayload {
+    actionType: string;
+    actionCategory: string;
+    status: string;
+    account: { id: string; name: string; address: string };
+    result: { passed: boolean; denials: any[] };
+    payload: any;
+    orderId?: string;
+    source: string;
+}
+
 export class OBExecutor {
     private client;
     private hl: Hyperliquid;
@@ -31,9 +42,9 @@ export class OBExecutor {
     private hedgingInterval: NodeJS.Timeout | null = null;
     private readonly HEDGE_THRESHOLD_ETH = 0.1; // Rebalance if delta > 0.1 ETH
 
-    constructor() {
+    constructor(auditEndpoint = 'http://localhost:3000/api/audit') {
+        // Create HyperEVM client (where MonsoonALM is deployed)
         this.client = createPublicClient({
-            chain: arbitrumSepolia,
             transport: http(RPC_URL),
         });
 
@@ -52,9 +63,10 @@ export class OBExecutor {
         console.log(`   Chain ID: ${CHAIN_ID}`);
         console.log(`   RPC: ${RPC_URL}`);
         console.log(`   ALM: ${MONSOON_ALM}`);
+        console.log(`   HyperLiquid: ${this.hyperliquid ? 'Connected' : 'Simulated'}`);
         console.log('');
 
-        // Watch for AllocateToOB events
+        // Watch for AllocateToOB events on HyperEVM
         this.client.watchContractEvent({
             address: MONSOON_ALM as `0x${string}`,
             abi: [ALLOCATE_EVENT],

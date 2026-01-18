@@ -28,10 +28,13 @@ interface OrderResponse {
 
 export class Hyperliquid {
     private account: Account;
-    private baseUrl = 'https://api.hyperliquid.xyz';
+    private baseUrl: string;
 
-    constructor(account: Account) {
+    constructor(account: Account, useTestnet = true) {
         this.account = account;
+        this.baseUrl = useTestnet
+            ? 'https://api.hyperliquid-testnet.xyz'
+            : 'https://api.hyperliquid.xyz';
     }
 
     // ============ INFO API ============

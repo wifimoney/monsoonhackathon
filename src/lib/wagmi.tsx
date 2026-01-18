@@ -10,14 +10,37 @@ import { ReactNode, useState } from 'react';
 import { defineChain, type Chain } from 'viem';
 import '@rainbow-me/rainbowkit/styles.css';
 
-// HyperEVM chain definition
-const hyperEvm = defineChain({
+// HyperEVM Testnet chain definition (where MonsoonALM is deployed)
+const hyperEvmTestnet = defineChain({
+    id: 998,
+    name: 'HyperEVM Testnet',
+    nativeCurrency: {
+        decimals: 18,
+        name: 'HYPE',
+        symbol: 'HYPE',
+    },
+    rpcUrls: {
+        default: {
+            http: ['https://rpc.hyperliquid-testnet.xyz/evm'],
+        },
+    },
+    blockExplorers: {
+        default: {
+            name: 'HyperEVM Testnet Explorer',
+            url: 'https://explorer.hyperliquid-testnet.xyz',
+        },
+    },
+    testnet: true,
+}) as Chain;
+
+// HyperEVM Mainnet (for future use)
+const hyperEvmMainnet = defineChain({
     id: 999,
     name: 'HyperEVM',
     nativeCurrency: {
         decimals: 18,
-        name: 'Ether',
-        symbol: 'ETH',
+        name: 'HYPE',
+        symbol: 'HYPE',
     },
     rpcUrls: {
         default: {
@@ -33,7 +56,12 @@ const hyperEvm = defineChain({
     testnet: false,
 }) as Chain;
 
+// HyperEVM Testnet is first = default chain for this app
 export const allChains: readonly [Chain, ...Chain[]] = [
+    hyperEvmTestnet,  // Default chain - where MonsoonALM is deployed
+    arbitrumSepolia,
+    baseSepolia,
+    hyperEvmMainnet,
     mainnet,
     arbitrum,
     optimism,
@@ -41,9 +69,6 @@ export const allChains: readonly [Chain, ...Chain[]] = [
     base,
     bsc,
     avalanche,
-    hyperEvm,
-    arbitrumSepolia,
-    baseSepolia,
 ];
 
 // Simplified Wagmi config - Injected only (MetaMask, etc) to avoid AppKit 403 errors
@@ -53,6 +78,8 @@ export const wagmiConfig = createConfig({
         injected(),
     ],
     transports: {
+        [hyperEvmTestnet.id]: http(),
+        [hyperEvmMainnet.id]: http(),
         [mainnet.id]: http(),
         [arbitrum.id]: http(),
         [optimism.id]: http(),
@@ -60,7 +87,6 @@ export const wagmiConfig = createConfig({
         [base.id]: http(),
         [bsc.id]: http(),
         [avalanche.id]: http(),
-        [hyperEvm.id]: http(),
         [arbitrumSepolia.id]: http(),
         [baseSepolia.id]: http(),
     },

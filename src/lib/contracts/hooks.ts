@@ -74,11 +74,11 @@ export function useOraclePrice() {
  * Approve token spending
  */
 export function useApproveToken() {
-    const { writeContract, data: hash, isPending, error } = useWriteContract();
+    const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const approve = async (tokenAddress: string, amount: bigint) => {
-        writeContract({
+        return await writeContractAsync({
             address: tokenAddress as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'approve',
@@ -93,11 +93,11 @@ export function useApproveToken() {
  * Deposit tokens into MonsoonALM
  */
 export function useDeposit() {
-    const { writeContract, data: hash, isPending, error } = useWriteContract();
+    const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const deposit = async (amount0: bigint, amount1: bigint, recipient: `0x${string}`) => {
-        writeContract({
+        return await writeContractAsync({
             address: HYPEREVM.MONSOON_ALM as `0x${string}`,
             abi: MONSOON_ALM_ABI,
             functionName: 'deposit',
@@ -112,11 +112,11 @@ export function useDeposit() {
  * Withdraw tokens from MonsoonALM
  */
 export function useWithdraw() {
-    const { writeContract, data: hash, isPending, error } = useWriteContract();
+    const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const withdraw = async (lpAmount: bigint, recipient: `0x${string}`) => {
-        writeContract({
+        return await writeContractAsync({
             address: HYPEREVM.MONSOON_ALM as `0x${string}`,
             abi: MONSOON_ALM_ABI,
             functionName: 'withdraw',
@@ -131,11 +131,11 @@ export function useWithdraw() {
  * Allocate liquidity to OB (strategist only)
  */
 export function useAllocateToOB() {
-    const { writeContract, data: hash, isPending, error } = useWriteContract();
+    const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const allocate = async (amount0: bigint, amount1: bigint) => {
-        writeContract({
+        return await writeContractAsync({
             address: HYPEREVM.MONSOON_ALM as `0x${string}`,
             abi: MONSOON_ALM_ABI,
             functionName: 'allocateToOB',
@@ -150,11 +150,11 @@ export function useAllocateToOB() {
  * Deallocate liquidity from OB (strategist only)
  */
 export function useDeallocateFromOB() {
-    const { writeContract, data: hash, isPending, error } = useWriteContract();
+    const { writeContractAsync, data: hash, isPending, error } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
     const deallocate = async (amount0: bigint, amount1: bigint) => {
-        writeContract({
+        return await writeContractAsync({
             address: HYPEREVM.MONSOON_ALM as `0x${string}`,
             abi: MONSOON_ALM_ABI,
             functionName: 'deallocateFromOB',
