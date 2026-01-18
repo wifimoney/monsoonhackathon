@@ -137,22 +137,42 @@ export default function VaultPage() {
 
   // Salt-gated then wagmi deposit
   const handleDeposit = async () => {
+    console.log('Starting handleDeposit...', { address, depositAmount })
     if (!address || !depositAmount) return
 
     // 1. Check with Salt Guardian first
+    console.log('Requesting simulation...')
     const approved = await simulateAction('deposit', depositAmount)
-    if (!approved) return
+    console.log('Simulation result:', approved)
+
+    if (!approved) {
+      console.warn('Deposit simulation denied/failed')
+      return
+    }
 
     // 2. Salt approved → Execute via wagmi on HyperEVM
     try {
+      console.log('Preparing wagmi transaction...')
       const amount = parseTokenAmount(depositAmount, DEPLOYED.tokens.TOKEN0.decimals)
 
+      if (amount <= BigInt(0)) {
+        console.error('Invalid amount:', amount)
+        setActionResult({ success: false, message: 'Invalid amount' })
+        return
+      }
+
       // Approve first
-      await approve(HYPEREVM.TOKEN0, amount)
+      console.log('Requesting Approval...')
+      const approveTx = await approve(HYPEREVM.TOKEN0, amount)
+      console.log('Approve TX sent:', approveTx)
+
+      console.log('Requesting Approval (Token1)...')
       await approve(HYPEREVM.TOKEN1, amount)
 
       // Then deposit
-      deposit(amount, amount, address)
+      console.log('Requesting Deposit...')
+      const depositTx = await deposit(amount, amount, address)
+      console.log('Deposit TX sent:', depositTx)
 
       setActionResult({ success: true, message: 'Deposit submitted to HyperEVM!' })
       setDepositAmount("")
