@@ -1,15 +1,16 @@
 # Monsoon Protocol - Deployment Notes
 
-## Deployed Contracts (Arbitrum Sepolia - Chain ID 421614)
+## Deployed Contracts (HyperEVM Testnet - Chain ID 998)
+RPC: `https://rpc.hyperliquid-testnet.xyz/evm`
 
 | Contract | Address |
 |----------|---------|
-| HyperCoreQuoter | `0x37f4e2a0a4a59f2a0405c4e539a39d90cf355d84` |
-| SovereignPool | `0x82b785a3ab55772c88381c4387083399422cdfcd` |
-| MonsoonALM | `0x63825fb627b0e85b2f70a3b42fe530c7e6d72498` |
-| MockFactory | `0x2746977b2921af42984f7d7f64597890d6e7f351` |
-| Token0 (mUSDC) | `0xaa6a7b7faa7f28566fe5c3cfc628a1ee0583a0ba` |
-| Token1 (mWETH) | `0xe4e118a0b252a631b19789d84f504b10167466e2` |
+| HyperCoreQuoter | `0x382269E2a46c4f73e83a241C13C3f3346B91f50d` |
+| SovereignPool | `0xE30b0A0031De98534D0aD96c6A50007a1CC1dC98` |
+| MonsoonALM | `0x77259d96Ae1AA52C771AeC5452929C7877Ab8B43` |
+| MockFactory | `0xc24F38189F0e2cf70F4faD13A3037Ad9f595b038` |
+| Token0 (mUSDC) | `0x2f2Af7b5fA68329b4086b04bCf9dac9E8c9f3494` |
+| Token1 (mWETH) | `0x4aDEED7d8ACB3E86b54A78E51E61936165169fA6` |
 
 ## Running the Executor
 

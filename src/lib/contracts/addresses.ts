@@ -1,7 +1,7 @@
 // Single Source of Truth - Deployed Addresses
 // Import from contracts/addresses.arbitrum-sepolia.json
 
-import addressesJson from '../../../contracts/addresses.arbitrum-sepolia.json';
+import addressesJson from '../../../contracts/addresses.hyperevm-testnet.json';
 
 // Type definitions
 interface TokenInfo {
