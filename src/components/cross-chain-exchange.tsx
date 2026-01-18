@@ -449,6 +449,8 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
   const [tokenLogos, setTokenLogos] = useState<Record<string, string>>({})
   const [expectedUSDC, setExpectedUSDC] = useState<string | null>(null)
   const [isCalculatingUSDC, setIsCalculatingUSDC] = useState(false)
+  const [balance, setBalance] = useState<string | null>(null)
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false)
 
   const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : []
   const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain)
@@ -540,6 +542,61 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     fetchAllTokenLogos()
   }, [])
 
+  // Fetch balance when chain, asset, or address changes
+  useEffect(() => {
+    if (!address || !selectedChain || !selectedAsset) {
+      setBalance(null)
+      return
+    }
+
+    const fetchBalance = async () => {
+      setIsLoadingBalance(true)
+      try {
+        let assetData: { address: string; decimals: number } | undefined
+
+        if (isHyperEVMSelected) {
+          // For HyperEVM deposits, always use USDC
+          assetData = ASSETS[hyperEVM.id]?.find((a) => a.symbol === "USDC")
+        } else {
+          assetData = selectedAssetData
+        }
+
+        if (!assetData) {
+          setBalance(null)
+          return
+        }
+
+        if (assetData.address === "0x0000000000000000000000000000000000000000") {
+          // Native token (ETH, MATIC, etc.)
+          const publicClient = getPublicClient(wagmiConfig, { chainId: selectedChain })
+          if (publicClient) {
+            const balance = await publicClient.getBalance({ address: address as `0x${string}` })
+            const formatted = formatTokenAmount(balance.toString(), assetData.decimals)
+            setBalance(formatted)
+          }
+        } else {
+          // ERC20 token
+          const balance = await readContract(wagmiConfig, {
+            address: assetData.address as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: "balanceOf",
+            args: [address as `0x${string}`],
+            chainId: isHyperEVMSelected ? hyperEVM.id : selectedChain,
+          })
+          const formatted = formatTokenAmount(balance.toString(), assetData.decimals)
+          setBalance(formatted)
+        }
+      } catch (error) {
+        console.error('[CrossChainExchange] Error fetching balance:', error)
+        setBalance(null)
+      } finally {
+        setIsLoadingBalance(false)
+      }
+    }
+
+    fetchBalance()
+  }, [address, selectedChain, selectedAsset, selectedAssetData, isHyperEVMSelected])
+
   // Calculate expected USDC amount when chain, asset, or amount changes
   useEffect(() => {
     // Only calculate if not HyperEVM (HyperEVM deposits are direct USDC)
@@ -565,6 +622,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const timeoutId = setTimeout(calculate, 300)
     return () => clearTimeout(timeoutId)
   }, [selectedChain, selectedAsset, amount, isHyperEVMSelected])
+
 
   const handleChainSelect = (chainId: number) => {
     const chainData = SUPPORTED_CHAINS.find((c) => c.id === chainId)
@@ -837,67 +895,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
       console.log('[Quote] Gas Cost USD:', route.gasCostUSD || 'N/A')
       console.log('[Quote] Tool:', route.steps?.[0]?.tool || 'N/A')
       console.log('[Quote] Total Steps:', route.steps?.length || 0)
-      
-      // Extract transaction data from route structure
-      if (route.steps && route.steps.length > 0) {
-        console.log('\n[Transaction Data] Step-by-step breakdown:')
-        route.steps.forEach((step, index) => {
-          console.log(`\n--- Step ${index + 1}: ${step.tool} ---`)
-          console.log('Step ID:', step.id)
-          console.log('Type:', step.type)
-          console.log('Execution Type:', step.executionType || 'N/A')
-          
-          // Action data
-          if (step.action) {
-            console.log('[Action] From Chain:', step.action.fromChainId)
-            console.log('[Action] To Chain:', step.action.toChainId)
-            console.log('[Action] From Amount:', step.action.fromAmount)
-            console.log('[Action] From Address:', step.action.fromAddress)
-            console.log('[Action] To Address:', step.action.toAddress)
-            console.log('[Action] Slippage:', step.action.slippage)
-          }
-          
-          // Estimate data (fees, gas, approval)
-          if (step.estimate) {
-            console.log('[Estimate] Approval Address:', step.estimate.approvalAddress || 'N/A')
-            console.log('[Estimate] To Amount:', step.estimate.toAmount)
-            console.log('[Estimate] To Amount Min:', step.estimate.toAmountMin)
-            console.log('[Estimate] Execution Duration:', step.estimate.executionDuration, 'seconds')
-            
-            // Fee costs
-            if (step.estimate.feeCosts && step.estimate.feeCosts.length > 0) {
-              console.log('[Estimate] Fee Costs:')
-              step.estimate.feeCosts.forEach(fee => {
-                console.log(`  - ${fee.name}: ${fee.amount} ($${fee.amountUSD})`)
-              })
-            }
-            
-            // Gas costs
-            if (step.estimate.gasCosts && step.estimate.gasCosts.length > 0) {
-              console.log('[Estimate] Gas Costs:')
-              step.estimate.gasCosts.forEach(gas => {
-                console.log(`  - ${gas.type}: ${gas.estimate} gas units ($${gas.amountUSD}) - ${gas.token.symbol}`)
-              })
-            }
-          }
-          
-          // Included steps (sub-transactions)
-          if (step.includedSteps && step.includedSteps.length > 0) {
-            console.log('[Included Steps]:', step.includedSteps.length, 'sub-steps')
-            step.includedSteps.forEach((subStep, subIndex) => {
-              console.log(`  Sub-step ${subIndex + 1}: ${subStep.tool} (${subStep.type})`)
-              if (subStep.estimate) {
-                const fromAmount = subStep.estimate.fromAmount || (subStep.action && 'fromAmount' in subStep.action ? subStep.action.fromAmount : 'N/A')
-                const toAmount = subStep.estimate.toAmount || (subStep.action && 'toAmount' in subStep.action ? subStep.action.toAmount : 'N/A')
-                console.log(`    - From: ${fromAmount}`)
-                console.log(`    - To: ${toAmount}`)
-              }
-            })
-          }
-        })
-      }
-      
-      console.log('\n[Quote] Complete Route Object:', JSON.stringify(route, null, 2))
+      console.log('[Quote] Complete Route Object:', JSON.stringify(route, null, 2))
       console.log('===================================\n')
 
       await executeRoute(route, {
@@ -983,7 +981,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         <div className="space-y-6">
           {/* Header with close button */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-white">Deposit / Bridge</h2>
+            <h2 className="text-xl font-semibold text-white">Deposit</h2>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10"
@@ -1142,6 +1140,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                   />
                   <div className="px-3 py-2 rounded-lg bg-primary/20 text-primary font-semibold">USDC</div>
                 </div>
+                <div className="mt-2 text-xs flex items-center justify-between">
+                  <span className="text-gray-500">Balance:</span>
+                  <span className={isLoadingBalance ? "text-gray-500" : "text-gray-400"}>
+                    {isLoadingBalance ? "Loading..." : balance !== null ? `${balance} USDC` : "--"}
+                  </span>
+                </div>
+                {balance && amount && Number.parseFloat(amount) > Number.parseFloat(balance) && (
+                  <div className="mt-2 text-xs text-red-500">
+                    Insufficient balance. You have {balance} {isHyperEVMSelected ? "USDC" : selectedAsset}
+                  </div>
+                )}
               </div>
 
               {/* Destination Selection */}
@@ -1200,8 +1209,12 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
               <Button
                 onClick={handleContinue}
-                disabled={!amount || Number.parseFloat(amount) <= 0}
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3"
+                disabled={
+                  !amount || 
+                  Number.parseFloat(amount) <= 0 || 
+                  (balance !== null && Number.parseFloat(amount) > Number.parseFloat(balance))
+                }
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue to Deposit
               </Button>
@@ -1223,6 +1236,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                   />
                   <div className="px-3 py-2 rounded-lg bg-[#1a1a2e] font-semibold text-white">{selectedAsset}</div>
                 </div>
+                <div className="mt-2 text-xs flex items-center justify-between">
+                  <span className="text-gray-500">Balance:</span>
+                  <span className={isLoadingBalance ? "text-gray-500" : "text-gray-400"}>
+                    {isLoadingBalance ? "Loading..." : balance !== null ? `${balance} ${selectedAsset}` : "--"}
+                  </span>
+                </div>
+                {balance && amount && Number.parseFloat(amount) > Number.parseFloat(balance) && (
+                  <div className="mt-2 text-xs text-red-500">
+                    Insufficient balance. You have {balance} {selectedAsset}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-center">
@@ -1315,8 +1339,12 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
               <Button
                 onClick={handleContinue}
-                disabled={!amount || Number.parseFloat(amount) <= 0}
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3"
+                disabled={
+                  !amount || 
+                  Number.parseFloat(amount) <= 0 || 
+                  (balance !== null && Number.parseFloat(amount) > Number.parseFloat(balance))
+                }
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue
               </Button>

@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAccount, useDisconnect, useConnect } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { CrossChainExchange } from './CrossChainExchange';
+import { CrossChainExchange } from './cross-chain-exchange';
+import { CrossChainBridge } from './cross-chain-bridge';
 
 export function ConnectWallet() {
     const { address, isConnected, chain, connector } = useAccount();
@@ -11,6 +12,7 @@ export function ConnectWallet() {
     const { connect, connectors } = useConnect();
     const [showFundMenu, setShowFundMenu] = useState(false);
     const [showCrossChainModal, setShowCrossChainModal] = useState(false);
+    const [modalType, setModalType] = useState<'deposit' | 'bridge'>('deposit');
     const [showWalletSelector, setShowWalletSelector] = useState(false);
     const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
     const [selectedAddress, setSelectedAddress] = useState<string | undefined>();
@@ -245,6 +247,7 @@ export function ConnectWallet() {
                                 <div className="py-2">
                                     <button
                                         onClick={() => {
+                                            setModalType('deposit');
                                             setShowCrossChainModal(true);
                                             setShowFundMenu(false);
                                         }}
@@ -257,6 +260,7 @@ export function ConnectWallet() {
                                     </button>
                                     <button
                                         onClick={() => {
+                                            setModalType('bridge');
                                             setShowCrossChainModal(true);
                                             setShowFundMenu(false);
                                         }}
@@ -288,10 +292,14 @@ export function ConnectWallet() {
                     </div>
                 </div>
 
-                {/* Cross Chain Exchange Modal (used for both Deposit and Bridge) */}
+                {/* Cross Chain Exchange Modal (Deposit) or Bridge Modal */}
                 {showCrossChainModal && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />
+                        {modalType === 'deposit' ? (
+                            <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />
+                        ) : (
+                            <CrossChainBridge onClose={() => setShowCrossChainModal(false)} />
+                        )}
                     </div>
                 )}
             </>

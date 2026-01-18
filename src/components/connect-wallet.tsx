@@ -5,12 +5,14 @@ import { createPortal } from 'react-dom';
 import { useAccount, useDisconnect } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { CrossChainExchange } from './cross-chain-exchange';
+import { CrossChainBridge } from './cross-chain-bridge';
 
 export function ConnectWallet() {
     const { address, isConnected, chain, connector } = useAccount();
     const { disconnect } = useDisconnect();
     const [showFundMenu, setShowFundMenu] = useState(false);
     const [showCrossChainModal, setShowCrossChainModal] = useState(false);
+    const [modalType, setModalType] = useState<'deposit' | 'bridge'>('deposit');
     const [showWalletSelector, setShowWalletSelector] = useState(false);
     const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
     const [mounted, setMounted] = useState(false);
@@ -202,7 +204,8 @@ export function ConnectWallet() {
                                         onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            console.log('[ConnectWallet] Deposit button clicked, opening modal');
+                                            console.log('[ConnectWallet] Deposit button clicked, opening deposit modal');
+                                            setModalType('deposit');
                                             setShowCrossChainModal(true);
                                             setShowFundMenu(false);
                                         }}
@@ -217,7 +220,8 @@ export function ConnectWallet() {
                                         onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            console.log('[ConnectWallet] Bridge button clicked, opening modal');
+                                            console.log('[ConnectWallet] Bridge button clicked, opening bridge modal');
+                                            setModalType('bridge');
                                             setShowCrossChainModal(true);
                                             setShowFundMenu(false);
                                         }}
@@ -249,9 +253,13 @@ export function ConnectWallet() {
                     </div>
                 </div>
 
-                {/* Cross Chain Exchange Modal - Rendered in Portal */}
+                {/* Cross Chain Exchange Modal (Deposit) or Bridge Modal - Rendered in Portal */}
                 {mounted && showCrossChainModal && createPortal(
-                    <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />,
+                    modalType === 'deposit' ? (
+                        <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />
+                    ) : (
+                        <CrossChainBridge onClose={() => setShowCrossChainModal(false)} />
+                    ),
                     document.body
                 )}
             </>

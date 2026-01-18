@@ -1,12 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { getWalletClient, switchChain, writeContract, waitForTransactionReceipt, readContract, getChainId, getPublicClient } from '@wagmi/core';
-import { executeRoute, getRoutes, createConfig, EVM } from '@lifi/sdk';
+import { executeRoute, createConfig, EVM } from '@lifi/sdk';
 import { arbitrum, mainnet, optimism, polygon, base, bsc, avalanche } from 'viem/chains';
-import { allChains } from '@/lib/wagmi';
-import { wagmiConfig } from '@/lib/wagmi';
+import { wagmiConfig, allChains } from '@/lib/wagmi';
 import { parseUnits } from 'viem';
 
 // Use viem chain definitions - get hyperEvm from wagmi config
@@ -66,6 +65,35 @@ const ASSETS: Record<number, { symbol: string; name: string; address: string; de
     999: [
         { symbol: 'USDC', name: 'USD Coin', address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f', decimals: 6 },
     ],
+};
+
+// LiFi API key from environment variable
+const LIFI_API_KEY = process.env.NEXT_PUBLIC_LIFI_API_KEY || process.env.LIFI_API_KEY || '';
+
+// Get chain IDs from environment variable (comma-separated, lines 5-6 of .env)
+// Example: NEXT_PUBLIC_LIFI_CHAINS="1,42161,10,137,8453,56,43114,999"
+const getEnvChainIds = (): number[] => {
+    const envChains = process.env.NEXT_PUBLIC_LIFI_CHAINS || process.env.LIFI_CHAINS;
+    if (!envChains) {
+        // Default to all supported chains if env var not set
+        return [1, 42161, 10, 137, 8453, 56, 43114, 999];
+    }
+    return envChains.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+};
+
+const ENV_CHAIN_IDS = getEnvChainIds();
+
+// Map chain IDs to LiFi chain identifiers (will be populated from API)
+// Default fallback values
+let LIFI_CHAIN_MAP: Record<number, string> = {
+    1: 'ETH',           // Ethereum
+    42161: 'ARB1',      // Arbitrum One
+    10: 'OPE',          // Optimism
+    137: 'POL',         // Polygon
+    8453: 'BAS',        // Base
+    56: 'BSC',          // BSC
+    43114: 'AVA',       // Avalanche
+    999: '999',         // HyperEVM (using chain ID directly)
 };
 
 // Convert human-readable amount to token amount with decimals
@@ -192,11 +220,178 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
     const [showDepositAfterBridge, setShowDepositAfterBridge] = useState(false); // Show deposit option after bridge
     const [progressStep, setProgressStep] = useState<number>(0); // 0 = not started, 1, 2, 3 = steps
     const [progressSteps, setProgressSteps] = useState<string[]>([]); // Array of step descriptions
+    const [showDepositDropdown, setShowDepositDropdown] = useState(false); // Deposit dropdown visibility
+    const [estimatedReceivedAmount, setEstimatedReceivedAmount] = useState<string>(''); // Estimated USDC received from LiFi route
+    const [lifiChainMap, setLifiChainMap] = useState<Record<number, string>>(LIFI_CHAIN_MAP); // Chain map from LiFi API
 
     const availableAssets = selectedChain ? ASSETS[selectedChain] || [] : [];
     const selectedChainData = SUPPORTED_CHAINS.find((c) => c.id === selectedChain);
     const selectedAssetData = availableAssets.find((a) => a.symbol === selectedAsset);
     const isHyperEVMSelected = selectedChain === HYPEREVM.chainId;
+
+    // Fetch chain info from LiFi API on mount
+    useEffect(() => {
+        const fetchLiFiChains = async () => {
+            try {
+                const headers: HeadersInit = {
+                    'Content-Type': 'application/json',
+                };
+                
+                // Add API key header if available
+                if (LIFI_API_KEY) {
+                    headers['x-lifi-api-key'] = LIFI_API_KEY;
+                }
+
+                const response = await fetch('https://li.quest/v1/chains', {
+                    method: 'GET',
+                    headers,
+                });
+
+                if (!response.ok) {
+                    console.warn('[CrossChainExchange] Failed to fetch chains from LiFi API:', response.status, response.statusText);
+                    return;
+                }
+
+                const data = await response.json();
+                
+                // Log the full API response for debugging
+                console.log('[CrossChainExchange] LiFi Chains API Response:', JSON.stringify(data, null, 2));
+                console.log('[CrossChainExchange] Total chains received:', data?.chains?.length || 0);
+                
+                if (data?.chains && Array.isArray(data.chains)) {
+                    // Build chain map from API response, filtering by env chain IDs
+                    const chainMap: Record<number, string> = {};
+                    
+                    console.log('[CrossChainExchange] Filtering chains by ENV_CHAIN_IDS:', ENV_CHAIN_IDS);
+                    
+                    data.chains.forEach((chainInfo: any) => {
+                        const chainId = chainInfo.id;
+                        // Only include chains specified in env variable (or all if not specified)
+                        if (!ENV_CHAIN_IDS.length || ENV_CHAIN_IDS.includes(chainId)) {
+                            // Use the chain 'key' from API (e.g., "eth", "pol") and convert to uppercase
+                            if (chainInfo.key) {
+                                chainMap[chainId] = chainInfo.key.toUpperCase();
+                            }
+                        }
+                    });
+
+                    // Merge with existing map to keep defaults for chains not in API response
+                    setLifiChainMap({ ...LIFI_CHAIN_MAP, ...chainMap });
+                    console.log('[CrossChainExchange] LiFi chains loaded from API:', Object.keys(chainMap).length, 'chains');
+                }
+            } catch (error) {
+                console.warn('[CrossChainExchange] Error fetching chains from LiFi API:', error);
+            }
+        };
+
+        fetchLiFiChains();
+    }, []);
+
+    // Calculate estimated received amount when amount/chain/asset changes (for cross-chain exchange)
+    useEffect(() => {
+        const calculateEstimatedAmount = async () => {
+            // Only calculate for cross-chain exchanges (not HyperEVM direct deposits)
+            if (isHyperEVMSelected || !selectedChain || !selectedAsset || !amount || !address) {
+                setEstimatedReceivedAmount('');
+                return;
+            }
+
+            const amountNum = parseFloat(amount);
+            if (isNaN(amountNum) || amountNum <= 0) {
+                setEstimatedReceivedAmount('');
+                return;
+            }
+
+            try {
+                const assetData = ASSETS[selectedChain]?.find((a) => a.symbol === selectedAsset);
+                if (!assetData?.address) {
+                    setEstimatedReceivedAmount('');
+                    return;
+                }
+
+                // Get LiFi chain identifiers for token endpoint (uses uppercase chain keys like "ETH")
+                const toChainKey = lifiChainMap[HYPEREVM.chainId] || HYPEREVM.chainId.toString();
+
+                // Get token info from LiFi API to verify decimals
+                const fromTokenAddress = assetData.address === '0x0000000000000000000000000000000000000000' 
+                    ? 'native' 
+                    : assetData.address.toLowerCase();
+                const toTokenAddress = HYPEREVM.usdcAddress.toLowerCase();
+
+                // Convert amount to token units (as string for API)
+                const tokenAmount = parseTokenAmount(amount, assetData.decimals);
+
+                // Prepare API calls for batch execution
+                // Token API uses: chain={CHAIN_KEY}&token={TOKEN_SYMBOL} (e.g., "ETH" and "USDC")
+                const tokenApiUrl = `https://li.quest/v1/token?chain=${toChainKey}&token=USDC`;
+                
+                // Quote API uses numeric chain IDs
+                const quoteParams = new URLSearchParams({
+                    fromChain: selectedChain.toString(),
+                    toChain: HYPEREVM.chainId.toString(),
+                    fromToken: fromTokenAddress,
+                    toToken: toTokenAddress,
+                    fromAmount: tokenAmount,
+                    fromAddress: address || '',
+                    slippage: '0.03', // 3% slippage tolerance
+                });
+                const quoteApiUrl = `https://li.quest/v1/quote?${quoteParams.toString()}`;
+
+                // Batch API calls in parallel using Promise.all
+                const [tokenResponse, quoteResponse] = await Promise.all([
+                    fetch(tokenApiUrl).catch(() => null), // Token API is optional
+                    fetch(quoteApiUrl), // Quote API is required
+                ]);
+
+                // Process token response (optional - for decimals)
+                let toTokenDecimals = 6; // Default USDC decimals
+                if (tokenResponse?.ok) {
+                    try {
+                        const tokenData = await tokenResponse.json();
+                        if (tokenData?.decimals) {
+                            toTokenDecimals = tokenData.decimals;
+                        }
+                    } catch (tokenError) {
+                        console.warn('[CrossChainExchange] Could not parse token info, using default decimals:', tokenError);
+                    }
+                } else if (tokenResponse === null) {
+                    console.warn('[CrossChainExchange] Token API call failed, using default decimals');
+                }
+
+                // Process quote response (required)
+                if (!quoteResponse.ok) {
+                    throw new Error(`LiFi API error: ${quoteResponse.status} ${quoteResponse.statusText}`);
+                }
+
+                const quoteData = await quoteResponse.json();
+
+                // Extract estimated received amount from quote response
+                // The estimate.toAmount is in smallest units (raw amount)
+                if (quoteData?.estimate?.toAmount) {
+                    const toAmountRaw = quoteData.estimate.toAmount.toString();
+                    const estimatedAmount = formatTokenAmount(toAmountRaw, toTokenDecimals);
+                    setEstimatedReceivedAmount(estimatedAmount);
+                } else if (quoteData?.toAmount) {
+                    // Fallback: check root-level toAmount
+                    const toAmountRaw = quoteData.toAmount.toString();
+                    const estimatedAmount = formatTokenAmount(toAmountRaw, toTokenDecimals);
+                    setEstimatedReceivedAmount(estimatedAmount);
+                } else {
+                    setEstimatedReceivedAmount('');
+                }
+            } catch (error) {
+                console.error('[CrossChainExchange] Error calculating estimated amount:', error);
+                setEstimatedReceivedAmount('');
+            }
+        };
+
+        // Debounce the calculation
+        const timeoutId = setTimeout(() => {
+            calculateEstimatedAmount();
+        }, 500); // Wait 500ms after user stops typing
+
+        return () => clearTimeout(timeoutId);
+    }, [amount, selectedChain, selectedAsset, address, isHyperEVMSelected]);
 
     const handleChainSelect = (chainId: number) => {
         setSelectedChain(chainId);
@@ -258,14 +453,15 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         
         // Initialize progress steps for deposit
         // Check if we already have progress steps (from previous bridge)
-        if (progressSteps.length === 2) {
+        if (progressSteps.length === 3) {
             // Post-bridge deposit - continue from bridge progress
-            // Update step 2 description with current destinationDex
+            // Update step 3 description with current destinationDex
             setProgressSteps([
                 progressSteps[0], // Keep step 1: Sending tokens
+                progressSteps[1], // Keep step 2: Receiving on HyperEVM
                 `Depositing ${depositAmount} USDC to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
             ]);
-            setProgressStep(2); // Step 2: Depositing (step 1 is already complete)
+            setProgressStep(3); // Step 3: Depositing (steps 1 and 2 are already complete)
         } else {
             // Direct deposit (no bridge) - only one step
             setProgressSteps([
@@ -298,68 +494,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             
             if (currentChainId !== HYPEREVM.chainId) {
                 console.log(`[Deposit] Switching to HyperEVM network...`);
-                console.log(`[Deposit] Current chain: ${currentChainId}, Target: ${HYPEREVM.chainId}`);
-                try {
-                    // Switch chain using wagmi core function - this will prompt the user
-                    await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
-                    console.log(`[Deposit] Chain switch requested. Waiting for user approval...`);
-                    
-                    // Wait for the chain switch to complete by polling the wallet client's chain ID
-                    // This is more reliable than getChainId which might use cached state
-                    let attempts = 0;
-                    const maxAttempts = 60; // 30 seconds max wait (user needs time to approve)
-                    let switched = false;
-                    
-                    while (attempts < maxAttempts && !switched) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        try {
-                            // Get wallet client and check its chain ID directly
-                            const walletClient = await getWalletClient(wagmiConfig);
-                            if (walletClient) {
-                                const walletChainId = await walletClient.getChainId();
-                                console.log(`[Deposit] Polling chain switch... Attempt ${attempts + 1}/${maxAttempts}, Current chain: ${walletChainId}`);
-                                if (walletChainId === HYPEREVM.chainId) {
-                                    console.log(`[Deposit] Successfully switched to HyperEVM (chain ID: ${walletChainId})`);
-                                    switched = true;
-                                    break;
-                                }
-                            }
-                        } catch (e) {
-                            // Wallet client might not be available yet, continue waiting
-                            console.log(`[Deposit] Waiting for chain switch... (${attempts + 1}/${maxAttempts})`);
-                        }
-                        attempts++;
-                    }
-                    
-                    // Final verification - check wallet client directly
-                    if (!switched) {
-                        const finalWalletClient = await getWalletClient(wagmiConfig);
-                        const finalChainId = finalWalletClient ? await finalWalletClient.getChainId() : await getChainId(wagmiConfig);
-                        console.error(`[Deposit] Chain switch failed. Final chain ID: ${finalChainId}, Expected: ${HYPEREVM.chainId}`);
-                        throw new Error(`Chain switch incomplete. Current chain: ${finalChainId}, Expected: ${HYPEREVM.chainId}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) in your wallet and try again.`);
-                    }
-                    
-                    // Small delay to ensure state propagation
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    
-                    // One more verification after delay
-                    const verifyWalletClient = await getWalletClient(wagmiConfig);
-                    if (verifyWalletClient) {
-                        const verifyChainId = await verifyWalletClient.getChainId();
-                        if (verifyChainId !== HYPEREVM.chainId) {
-                            throw new Error(`Chain switch verification failed. Current chain: ${verifyChainId}, Expected: ${HYPEREVM.chainId}. Please ensure you're on HyperEVM in your wallet.`);
-                        }
-                        console.log(`[Deposit] Chain switch verified: ${verifyChainId}`);
-                    }
-                } catch (error: any) {
-                    console.error(`[Deposit] Failed to switch chain:`, error);
-                    if (error.message?.includes('User rejected') || error.message?.includes('rejected')) {
-                        throw new Error('Chain switch was rejected. Please switch to HyperEVM (Chain ID: 999) manually in your wallet and try again.');
-                    }
-                    throw new Error(`Failed to switch to HyperEVM network: ${error.message || 'Unknown error'}. Please switch to HyperEVM (Chain ID: ${HYPEREVM.chainId}) manually in your wallet.`);
-                }
-            } else {
-                console.log(`[Deposit] Already on HyperEVM (chain ID: ${currentChainId})`);
+                await switchChain(wagmiConfig, { chainId: HYPEREVM.chainId });
             }
 
             // Convert amount to token units
@@ -390,9 +525,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Update progress: Starting deposit
             if (!isHyperEVMSelected) {
-                setProgressStep(2); // Step 2: Depositing (post-bridge)
+                setProgressStep(3); // Step 3: Depositing
             } else {
-                setProgressStep(1); // Step 1: Depositing (direct deposit)
+                setProgressStep(1);
             }
 
             // Verify we're on HyperEVM by checking wallet client directly
@@ -525,7 +660,7 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
             // Mark final step as complete
             const isPostBridge = depositAmountOverride !== undefined;
             if (isPostBridge) {
-                setProgressStep(2); // Step 2 complete (deposit after bridge)
+                setProgressStep(3); // Step 3 complete (deposit after bridge)
             } else {
                 setProgressStep(1); // Step 1 complete (direct deposit)
             }
@@ -633,9 +768,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setTxStatus('pending');
         // Initialize progress steps for cross-chain operation
         // Use the pre-selected destinationDex that user chose in amount step
-        // Removed "Receiving USDC on HyperEVM" step - tokens go directly to HyperCore
         setProgressSteps([
             `Sending ${amount} ${selectedAsset} on ${selectedChainData?.name}`,
+            `Receiving USDC on HyperEVM`,
             `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
         ]);
         setProgressStep(1); // Step 1: Sending tokens
@@ -703,28 +838,42 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 // Continue anyway - LiFi will check balance too
             }
 
-            // Get routes from LiFi with slippage tolerance
-            console.log('[LiFi] Fetching routes...');
-            const result = await getRoutes({
-                fromChainId: selectedChain,
-                fromTokenAddress: selectedAssetData.address,
-                toChainId: HYPEREVM.chainId,
-                toTokenAddress: HYPEREVM.usdcAddress,
+            // Get routes from LiFi API with slippage tolerance
+            console.log('[LiFi] Fetching routes from API...');
+            
+            // Prepare token addresses for API
+            const fromTokenAddressForRoutes = selectedAssetData.address === '0x0000000000000000000000000000000000000000'
+                ? 'native'
+                : selectedAssetData.address.toLowerCase();
+            const toTokenAddressForRoutes = HYPEREVM.usdcAddress.toLowerCase();
+
+            // Fetch routes from LiFi API
+            const routesParams = new URLSearchParams({
+                fromChain: selectedChain.toString(),
+                toChain: HYPEREVM.chainId.toString(),
+                fromToken: fromTokenAddressForRoutes,
+                toToken: toTokenAddressForRoutes,
                 fromAmount: tokenAmount,
-                fromAddress: address,
-                options: {
-                    slippage: 0.03, // 3% slippage tolerance
-                    order: 'RECOMMENDED',
-                },
+                fromAddress: address || '',
+                slippage: '0.03', // 3% slippage tolerance
+                order: 'RECOMMENDED',
             });
 
-            console.log(`[LiFi] Found ${result.routes.length} route(s)`);
+            const routesResponse = await fetch(`https://li.quest/v1/routes?${routesParams.toString()}`);
+            
+            if (!routesResponse.ok) {
+                throw new Error(`LiFi API error: ${routesResponse.status} ${routesResponse.statusText}`);
+            }
 
-            if (result.routes.length === 0) {
+            const routesData = await routesResponse.json();
+            
+            console.log(`[LiFi] Found ${routesData.routes?.length || 0} route(s)`);
+
+            if (!routesData.routes || routesData.routes.length === 0) {
                 throw new Error('No route found');
             }
 
-            const route = result.routes[0];
+            const route = routesData.routes[0];
             const fromTokenDecimals = route.fromToken?.decimals || 18;
             const toTokenDecimals = route.toToken?.decimals || 6; // USDC default
             console.log('[LiFi] Selected route:', {
@@ -752,10 +901,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     const doneSteps = updatedRoute.steps?.filter(s => s.execution?.status === 'DONE') || [];
                     const totalSteps = updatedRoute.steps?.length || 1;
                     
-                    // If all bridge steps are done, move to step 2 (depositing to HyperCore)
-                    // Skip the "Receiving on HyperEVM" step - go directly to deposit
+                    // If all bridge steps are done, move to step 2 (receiving)
                     if (doneSteps.length === totalSteps && totalSteps > 0) {
-                        setProgressStep(2); // Step 2: Depositing to HyperCore
+                        setProgressStep(2); // Step 2: Receiving on HyperEVM
                     } else if (currentStep && currentStep.execution?.status === 'PENDING') {
                         setProgressStep(1); // Step 1: Still sending/bridging
                     }
@@ -809,6 +957,9 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                 ? formatTokenAmount(receivedAmount, route.toToken?.decimals || 6)
                 : amount;
 
+            // Mark step 2 as complete (receiving on HyperEVM)
+            setProgressStep(2);
+
             console.log('\n========== EXCHANGE SUCCESSFUL ==========');
             console.log(`[Exchange] ${amount} ${selectedAsset} -> ${receivedAmountFormatted} USDC on HyperEVM`);
             console.log(`[Exchange] Bridge verified: All steps completed successfully`);
@@ -816,31 +967,32 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
 
             // Store bridged amount
             setBridgedAmount(receivedAmountFormatted);
-            // Ensure showDepositAfterBridge is false since we're auto-depositing
-            setShowDepositAfterBridge(false);
 
-            // Automatically trigger deposit to HyperCore after successful bridge
-            // No user permission needed - deposit happens automatically after bridge
+            // Only trigger deposit if bridge was successful
+            // Verify the bridge completed successfully before depositing
             console.log('\n========== VERIFYING BRIDGE SUCCESS ==========');
             console.log(`[Verification] Bridge completed: ${receivedAmountFormatted} USDC received on HyperEVM`);
             console.log(`[Verification] All bridge steps completed successfully`);
             console.log('===============================================\n');
 
             // Automatically trigger deposit to HyperCore after successful bridge
-            // Progress steps are already set up for 2-step process (no "Receiving on HyperEVM" step)
-            setProgressStep(2); // Step 1 (sending) is done, starting step 2 (depositing to HyperCore)
+            // Ensure progress steps are set up for the 3-step process
+            setProgressSteps([
+                `Sending ${amount} ${selectedAsset} on ${selectedChainData?.name}`,
+                `Receiving USDC on HyperEVM`,
+                `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+            ]);
+            setProgressStep(2); // Steps 1 and 2 are done, starting step 3
             
             // Automatically trigger deposit with the bridged amount
             // Pass the bridged amount and HyperEVM config directly to handleDeposit
-            // This will prompt for wallet approval but happens automatically without user clicking a button
             console.log('\n========== AUTO-DEPOSIT AFTER BRIDGE ==========');
             console.log(`[Auto-Deposit] Starting automatic deposit of ${receivedAmountFormatted} USDC to HyperCore`);
-            console.log(`[Auto-Deposit] Bridge verified successful - proceeding with automatic deposit`);
-            console.log(`[Auto-Deposit] Destination: HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`);
+            console.log(`[Auto-Deposit] Bridge verified successful - proceeding with deposit`);
             console.log('================================================\n');
             
-            // Automatically call handleDeposit - user will only need to approve the wallet transaction
-            // No intermediate success screen or manual button click required
+            // Call handleDeposit with the bridged amount, overriding state values
+            // This will only execute if the bridge was successful (verified above)
             await handleDeposit(receivedAmountFormatted, HYPEREVM.chainId, 'USDC');
         } catch (error: any) {
             // Check if user rejected the transaction
@@ -906,6 +1058,23 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
         setProgressSteps([]);
     };
 
+    const handleDepositAfterBridge = () => {
+        // Switch to HyperEVM deposit flow
+        // Update progress steps to show all 3 steps (1 and 2 already done)
+        setProgressSteps([
+            `Sending ${bridgedAmount || amount} ${selectedAsset} on ${selectedChainData?.name}`,
+            `Receiving USDC on HyperEVM`,
+            `Depositing to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+        ]);
+        setProgressStep(2); // Step 1 and 2 are complete, about to start step 3
+        
+        setSelectedChain(HYPEREVM.chainId);
+        setSelectedAsset('USDC');
+        setAmount(bridgedAmount); // Use the bridged amount
+        setStep('amount'); // Go to amount step where they can select Spot/Perps
+        setTxStatus('idle');
+        setShowDepositAfterBridge(false);
+    };
 
 
     if (!isConnected) {
@@ -1183,12 +1352,17 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="flex-1 text-2xl font-bold text-[var(--muted)]">
-                                    {amount ? '~' + amount : '0.0'}
+                                    {estimatedReceivedAmount || (amount ? '~' + amount : '0.0')}
                                 </div>
                                 <div className="px-3 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-semibold">
                                     USDC
                                 </div>
                             </div>
+                            {estimatedReceivedAmount && amount && parseFloat(amount) > 0 && (
+                                <div className="text-xs text-[var(--muted)] mt-1">
+                                    Estimated amount after fees and exchange rate
+                                </div>
+                            )}
                         </div>
 
                                 {/* Destination Selection: Spot or Perps for cross-chain deposits */}
@@ -1439,15 +1613,49 @@ export function CrossChainExchange({ onClose }: CrossChainExchangeProps) {
                     <div className="text-center py-8">
                         <div className="text-5xl mb-4">✓</div>
                         <h4 className="text-lg font-bold text-[var(--accent)] mb-2">
-                            {/* Always show "Deposit Successful!" since automatic deposit completes the full flow */}
-                            Deposit Successful!
+                            {/* Show "Deposit Successful!" if: 
+                                1. Direct deposit on HyperEVM (isHyperEVMSelected), OR
+                                2. Post-bridge deposit completed (progressSteps.length === 3 and progressStep === 3) */}
+                            {(isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3)) 
+                                ? 'Deposit Successful!' 
+                                : 'Bridge Successful!'}
                         </h4>
                         <p className="text-[var(--muted)] text-sm mb-4">
-                            {`${amount || bridgedAmount} USDC transferred to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`}
+                            {(isHyperEVMSelected || (progressSteps.length === 3 && progressStep === 3))
+                                ? `${amount || bridgedAmount} USDC transferred from HyperEVM to HyperCore ${destinationDex === 'spot' ? 'Spot' : 'Perps'} account`
+                                : `${bridgedAmount || amount} USDC is now on HyperEVM`}
                         </p>
+                        {!isHyperEVMSelected && !(progressSteps.length === 3 && progressStep === 3) && showDepositAfterBridge && (
+                            <div className="space-y-3">
+                                <div className="card bg-[var(--primary)]/10 border border-[var(--primary)]/30 p-4 mb-4">
+                                    <div className="text-sm text-[var(--muted)] mb-2">
+                                        Your USDC is on HyperEVM. Ready to deposit to HyperCore.
+                                    </div>
+                                    <div className="text-xs text-[var(--muted)]">
+                                        Destination: <strong>{destinationDex === 'spot' ? 'Spot' : 'Perps'} Account</strong>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={handleDepositAfterBridge} 
+                                    className="btn btn-accent w-full py-4"
+                                >
+                                    Deposit to HyperCore {destinationDex === 'spot' ? 'Spot' : 'Perps'}
+                                </button>
+                                <button onClick={resetForm} className="btn btn-secondary w-full">
+                                    Done
+                                </button>
+                            </div>
+                        )}
+                        {isHyperEVMSelected && (
+                            <button onClick={resetForm} className="btn btn-secondary">
+                                New Deposit
+                            </button>
+                        )}
+                        {!isHyperEVMSelected && !showDepositAfterBridge && (
                         <button onClick={resetForm} className="btn btn-secondary">
-                            {isHyperEVMSelected ? 'New Deposit' : 'New Exchange'}
+                            New Exchange
                         </button>
+                        )}
                     </div>
                 )}
 

@@ -19,6 +19,7 @@ import {
 import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CreditCard, RefreshCw, Send, Wallet } from "lucide-react"
 import { ConnectWallet } from "./connect-wallet"
 import { CrossChainExchange } from "./cross-chain-exchange"
+import { CrossChainBridge } from "./cross-chain-bridge"
 
 const navItems = [
   { name: "Agent", href: "/dashboard/agent" },
@@ -70,6 +71,7 @@ export function DashboardHeader() {
   const { address, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
   const [showCrossChainModal, setShowCrossChainModal] = useState(false)
+  const [modalType, setModalType] = useState<'deposit' | 'bridge'>('deposit')
   const [mounted, setMounted] = useState(false)
   const [usdcBalance, setUsdcBalance] = useState<string | null>(null)
   const [isLoadingBalance, setIsLoadingBalance] = useState(false)
@@ -148,8 +150,13 @@ export function DashboardHeader() {
   }
 
   const handleWalletAction = (actionName: string) => {
-    if (actionName === "Deposit" || actionName === "Bridge") {
-      console.log(`[DashboardHeader] ${actionName} clicked, opening modal`)
+    if (actionName === "Deposit") {
+      console.log(`[DashboardHeader] ${actionName} clicked, opening deposit modal`)
+      setModalType('deposit')
+      setShowCrossChainModal(true)
+    } else if (actionName === "Bridge") {
+      console.log(`[DashboardHeader] ${actionName} clicked, opening bridge modal`)
+      setModalType('bridge')
       setShowCrossChainModal(true)
     }
     // Add other action handlers here as needed
@@ -239,9 +246,13 @@ export function DashboardHeader() {
         )}
       </div>
 
-      {/* Cross Chain Exchange Modal - Rendered in Portal */}
+      {/* Cross Chain Exchange Modal (Deposit) or Bridge Modal - Rendered in Portal */}
       {mounted && showCrossChainModal && createPortal(
-        <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />,
+        modalType === 'deposit' ? (
+          <CrossChainExchange onClose={() => setShowCrossChainModal(false)} />
+        ) : (
+          <CrossChainBridge onClose={() => setShowCrossChainModal(false)} />
+        ),
         document.body
       )}
     </header>
