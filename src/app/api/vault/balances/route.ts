@@ -38,7 +38,7 @@ export async function GET(request: Request) {
         const natBalance = await provider.getBalance(address);
         const native = {
             symbol: 'ETH', // or generic 'NATIVE'
-            balance: ethers.formatEther(natBalance),
+            balance: ethers.utils.formatEther(natBalance),
             raw: natBalance.toString()
         };
 
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
             tokens.push({
                 symbol: DEPLOYED.tokens.TOKEN0.symbol,
                 address: DEPLOYED.tokens.TOKEN0.address,
-                balance: ethers.formatUnits(b0, DEPLOYED.tokens.TOKEN0.decimals),
+                balance: ethers.utils.formatUnits(b0, DEPLOYED.tokens.TOKEN0.decimals),
                 raw: b0.toString()
             });
         }
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
             tokens.push({
                 symbol: DEPLOYED.tokens.TOKEN1.symbol,
                 address: DEPLOYED.tokens.TOKEN1.address,
-                balance: ethers.formatUnits(b1, DEPLOYED.tokens.TOKEN1.decimals),
+                balance: ethers.utils.formatUnits(b1, DEPLOYED.tokens.TOKEN1.decimals),
                 raw: b1.toString()
             });
         }

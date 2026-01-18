@@ -160,7 +160,16 @@ export async function POST(request: Request) {
     }
     console.log('✅ Salt Guardians Passed');
 
-    const pearPayload = convertToPearFormat(longPositions, shortPositions, positionSizeUsd, leverage ?? 1);
+    const leverageValue = leverage ?? 1;
+    const pearPayload = convertToPearFormat(longPositions, shortPositions, positionSizeUsd, leverageValue);
+
+    // Build summary message
+    const longSummary = longPositions
+      .map((p) => `${p.symbol} (${p.weight}%)`)
+      .join(', ');
+    const shortSummary = shortPositions
+      .map((p) => `${p.symbol} (${p.weight}%)`)
+      .join(', ');
 
     if (accessToken) {
       console.log('Executing trade via Pear Protocol...');
@@ -193,7 +202,7 @@ Position ID: ${pearResult.positionId}`;
 
       return NextResponse.json({
         success: true,
-        message: `Trade executed successfully. Position ID: ${pearResult.positionId}`,
+        message,
         positionId: pearResult.positionId,
         executedViaPear: true,
       });
