@@ -24,22 +24,36 @@ export interface ValidationResult {
 
 /**
  * Service to validate trade requests against Salt's Guardian Policies
- * 
- * In a full production system, this would:
- * 1. Fetch the user's specific policy configuration from DB/Salt API
- * 2. Validate the request against that specific config
- * 
- * For this MVP:
- * 1. Uses a default 'conservative' preset for all users to demonstrate enforcement
  */
 export class GuardianService {
 
     /**
      * Get the active configuration for the user
-     * Mocked to return a default preset for MVP
+     * Fetches from SQLite if available, otherwise default
      */
-    private static getConfig(): GuardiansConfig {
-        // Using 'default' preset: Max Spend $250/trade, Max Daily $1000
+    private static async getConfig(): Promise<GuardiansConfig> {
+        try {
+            // In a real app, context (userId/orgId) would be passed in or retrieved from request context
+            // For this hackathon, we use the env vars as the "active" session context
+            const orgId = process.env.SALT_ORG_ID;
+            const accountId = process.env.SALT_ACCOUNT_ID;
+
+            if (orgId && accountId) {
+                // Dynamic import to avoid circular dep issues if any, or just clean separation
+                const { getDatabase } = await import('@/audit/db');
+                const db = getDatabase();
+
+                const row = db.prepare('SELECT config_json FROM guardrails WHERE org_id = ? AND account_id = ?').get(orgId, accountId) as { config_json: string } | undefined;
+
+                if (row) {
+                    return JSON.parse(row.config_json);
+                }
+            }
+        } catch (error) {
+            console.warn("GuardianService: Failed to load config from DB, using default.", error);
+        }
+
+        // Default preset fallback
         return GUARDIAN_PRESETS.default;
     }
 
@@ -47,7 +61,7 @@ export class GuardianService {
      * Validate a trade request against active policies
      */
     public static async validateTradeRequest(request: TradeRequest): Promise<ValidationResult> {
-        const config = this.getConfig();
+        const config = await this.getConfig();
 
         // Map generic TradeRequest to internal ActionIntent used by guardrails
         // We use 'SPOT_MARKET_ORDER' type as a proxy for "Trade Intent" even for Perps in this MVP logic
