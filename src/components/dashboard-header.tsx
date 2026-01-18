@@ -19,11 +19,11 @@ import { ConnectWallet } from "./connect-wallet"
 import { CrossChainExchange } from "./cross-chain-exchange"
 
 const navItems = [
-  { name: "Trade", href: "/dashboard/trade" },
   { name: "Agent", href: "/dashboard/agent" },
+  { name: "Trade", href: "/dashboard/trade" },
+  { name: "Portfolio", href: "/dashboard/portfolio" },
   { name: "Vault", href: "/dashboard/vault" },
   { name: "Orderbook", href: "/dashboard/orderbook" },
-  { name: "Pear", href: "/dashboard/pear" },
   { name: "Guardians", href: "/dashboard/guardians" },
   { name: "Audit", href: "/dashboard/audit" },
 ]

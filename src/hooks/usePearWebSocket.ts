@@ -178,20 +178,32 @@ export function usePearWebSocket() {
           const summaryData = message.data as Record<string, unknown>;
           console.log('[WebSocket] Account summary data:', summaryData);
           if (summaryData) {
-            // Map actual API fields to expected fields
-            // API may use unrealizedPnl (lowercase) and currentOpenInterest
+            // Handle nested 'overall' structure (same as /portfolio API)
+            const overall = summaryData.overall as Record<string, unknown> | undefined;
+            const data = overall || summaryData;
+
+            // Calculate realized P&L from winning/losing if available
+            const totalWinningUsd = (data.totalWinningUsd as number) ?? 0;
+            const totalLosingUsd = (data.totalLosingUsd as number) ?? 0;
+            const calculatedRealizedPnL = totalWinningUsd - totalLosingUsd;
+
+            const positionsValue = (data.totalPositionsValue as number) ??
+                                   (data.totalAccountValue as number) ??
+                                   (data.accountValue as number) ??
+                                   (data.currentOpenInterest as number) ?? 0;
+
             setAccountSummary({
-              totalAccountValue: (summaryData.totalAccountValue as number) ??
-                                 (summaryData.accountValue as number) ??
-                                 (summaryData.currentOpenInterest as number) ?? 0,
-              totalUnrealizedPnL: (summaryData.totalUnrealizedPnL as number) ??
-                                  (summaryData.unrealizedPnL as number) ??
-                                  (summaryData.unrealizedPnl as number) ?? 0,
-              totalRealizedPnL: (summaryData.totalRealizedPnL as number) ??
-                                (summaryData.realizedPnL as number) ??
-                                (summaryData.realizedPnl as number) ?? 0,
-              marginUsage: (summaryData.marginUsage as number) ??
-                           (summaryData.marginRatio as number) ?? 0,
+              totalPositionsValue: positionsValue,
+              availableBalance: (data.availableBalance as number) ?? 0,
+              totalUnrealizedPnL: (data.totalUnrealizedPnL as number) ??
+                                  (data.unrealizedPnL as number) ??
+                                  (data.unrealizedPnl as number) ?? 0,
+              totalRealizedPnL: (data.totalRealizedPnL as number) ??
+                                (data.realizedPnL as number) ??
+                                (data.realizedPnl as number) ??
+                                (totalWinningUsd || totalLosingUsd ? calculatedRealizedPnL : 0),
+              marginUsage: (data.marginUsage as number) ??
+                           (data.marginRatio as number) ?? 0,
             });
           }
           break;

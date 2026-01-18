@@ -131,30 +131,27 @@ export function PortfolioMetrics({
     );
   }
 
+  const totalPositionsValue = metrics.totalPositionsValue ?? metrics.totalAccountValue ?? 0;
+  const availableBalance = metrics.availableBalance ?? 0;
   const unrealizedPnL = metrics.totalUnrealizedPnL ?? 0;
   const realizedPnL = metrics.totalRealizedPnL ?? 0;
-  const marginUsage = metrics.marginUsage ?? 0;
 
   const unrealizedPnLColor =
     unrealizedPnL >= 0 ? 'var(--accent)' : 'var(--danger)';
   const realizedPnLColor =
     realizedPnL >= 0 ? 'var(--accent)' : 'var(--danger)';
 
-  // Margin usage color (warning if > 70%, danger if > 90%)
-  const marginUsageColor =
-    marginUsage > 0.9
-      ? 'var(--danger)'
-      : marginUsage > 0.7
-      ? '#f59e0b' // warning yellow
-      : 'var(--foreground)';
-
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Portfolio Summary</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
-          label="Total Account Value"
-          value={formatCurrency(metrics.totalAccountValue ?? 0)}
+          label="Total Positions Value"
+          value={formatCurrency(totalPositionsValue)}
+        />
+        <MetricCard
+          label="Available USDC"
+          value={formatCurrency(availableBalance)}
         />
         <MetricCard
           label="Unrealized P&L"
@@ -165,11 +162,6 @@ export function PortfolioMetrics({
           label="Realized P&L"
           value={formatCurrency(realizedPnL, true)}
           valueColor={realizedPnLColor}
-        />
-        <MetricCard
-          label="Margin Usage"
-          value={formatPercentage(marginUsage)}
-          valueColor={marginUsageColor}
         />
       </div>
     </div>

@@ -35,17 +35,20 @@ function convertToPearFormat(
 ): PearPayload {
   const longTotalWeight = longPositions.reduce((sum, p) => sum + p.weight, 0);
   const shortTotalWeight = shortPositions.reduce((sum, p) => sum + p.weight, 0);
-  const combinedTotalWeight = longTotalWeight + shortTotalWeight;
 
+  // Normalize weights WITHIN each side to sum to 1.0
   const longAssets = longPositions.map((p) => ({
     asset: p.symbol,
-    weight: combinedTotalWeight > 0 ? p.weight / combinedTotalWeight : 0,
+    weight: longTotalWeight > 0 ? p.weight / longTotalWeight : 0,
   }));
 
   const shortAssets = shortPositions.map((p) => ({
     asset: p.symbol,
-    weight: combinedTotalWeight > 0 ? p.weight / combinedTotalWeight : 0,
+    weight: shortTotalWeight > 0 ? p.weight / shortTotalWeight : 0,
   }));
+
+  console.log('[convertToPearFormat] Long side total:', longTotalWeight, '% -> weights:', longAssets);
+  console.log('[convertToPearFormat] Short side total:', shortTotalWeight, '% -> weights:', shortAssets);
 
   return {
     longAssets,
@@ -59,7 +62,7 @@ function convertToPearFormat(
 async function executePearTrade(
   pearPayload: PearPayload,
   accessToken: string
-): Promise<{ success: boolean; positionId?: string; error?: string }> {
+): Promise<{ success: boolean; positionId?: string; error?: string; fills?: unknown[]; filledAssets?: string[] }> {
   try {
     const requestBody = {
       longAssets: pearPayload.longAssets,
@@ -97,9 +100,16 @@ async function executePearTrade(
     }
 
     const data = JSON.parse(responseText);
+
+    // Check if all legs were executed
+    const fills = data.fills || [];
+    const filledAssets = new Set(fills.map((f: { coin: string }) => f.coin));
+
     return {
       success: true,
       positionId: data.positionId || data.orderId,
+      fills: fills,
+      filledAssets: Array.from(filledAssets) as string[],
     };
   } catch (error) {
     console.error('executePearTrade error:', error);
@@ -173,6 +183,13 @@ export async function POST(request: Request) {
       if (!pearResult.success) {
         return NextResponse.json({ success: false, error: pearResult.error }, { status: 500 });
       }
+
+      const message = `Trade executed successfully via Pear Protocol with $${positionSizeUsd.toLocaleString()} position size at ${leverageValue}x leverage.
+
+**LONG:** ${longSummary || 'None'}
+**SHORT:** ${shortSummary || 'None'}
+
+Position ID: ${pearResult.positionId}`;
 
       return NextResponse.json({
         success: true,

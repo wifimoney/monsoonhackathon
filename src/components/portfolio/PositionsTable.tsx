@@ -120,25 +120,26 @@ function CloseConfirmationDialog({
   const size = position.positionValue ?? position.size ?? 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="card max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
         <h3 className="text-lg font-semibold mb-4">Confirm Close Position</h3>
-        <p className="text-[var(--muted)] mb-4">
+        <p className="text-[var(--muted)] mb-6">
           Are you sure you want to close your{' '}
           <span className="font-mono font-semibold text-[var(--foreground)]">
             {getPairString(position)}
           </span>{' '}
           position?
         </p>
-        <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-          <div>
-            <span className="text-[var(--muted)]">Size:</span>
-            <span className="ml-2 font-mono">${size.toLocaleString()}</span>
+
+        <div className="space-y-3 mb-6">
+          <div className="flex justify-between items-center">
+            <span className="text-[var(--muted)]">Position Value</span>
+            <span className="font-mono font-medium">${size.toLocaleString()}</span>
           </div>
-          <div>
-            <span className="text-[var(--muted)]">Unrealized P&L:</span>
+          <div className="flex justify-between items-center">
+            <span className="text-[var(--muted)]">Unrealized P&L</span>
             <span
-              className={`ml-2 font-mono ${
+              className={`font-mono font-medium ${
                 pnl >= 0 ? 'text-[var(--accent)]' : 'text-[var(--danger)]'
               }`}
             >
@@ -146,17 +147,18 @@ function CloseConfirmationDialog({
             </span>
           </div>
         </div>
+
         <div className="flex gap-3">
           <button
             onClick={onCancel}
-            className="btn btn-secondary flex-1"
+            className="btn btn-secondary flex-1 py-2.5"
             disabled={isClosing}
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="btn btn-danger flex-1"
+            className="btn btn-danger flex-1 py-2.5"
             disabled={isClosing}
           >
             {isClosing ? 'Closing...' : 'Confirm'}
