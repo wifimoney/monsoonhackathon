@@ -38,7 +38,7 @@ export default function AgentPage() {
 
   // State for auth modal and pending trade
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const pendingTradeRef = useRef<{ proposalId: string; positionSizeUsd: number } | null>(null);
+  const pendingTradeRef = useRef<{ proposalId: string; positionSizeUsd: number; leverage: number } | null>(null);
 
   // Input state for the chat input
   const [input, setInput] = useState('');
@@ -88,10 +88,10 @@ export default function AgentPage() {
    */
   const executePendingTrade = useCallback(async () => {
     if (pendingTradeRef.current) {
-      const { proposalId, positionSizeUsd } = pendingTradeRef.current;
+      const { proposalId, positionSizeUsd, leverage } = pendingTradeRef.current;
       pendingTradeRef.current = null;
       setIsAuthModalOpen(false);
-      await acceptTrade(proposalId, positionSizeUsd);
+      await acceptTrade(proposalId, positionSizeUsd, leverage);
     }
   }, [acceptTrade]);
 
@@ -102,17 +102,17 @@ export default function AgentPage() {
    * - After all 4 steps complete, proceed to execute the trade
    */
   const handleAcceptSubmit = useCallback(
-    async (proposalId: string, positionSizeUsd: number) => {
+    async (proposalId: string, positionSizeUsd: number, leverage: number) => {
       // Check current auth status
       const authed = await checkAuthStatus();
 
       if (authed) {
         // User is already authenticated, proceed with trade
-        await acceptTrade(proposalId, positionSizeUsd);
+        await acceptTrade(proposalId, positionSizeUsd, leverage);
       } else {
         // User needs to authenticate first
         // Store the pending trade details
-        pendingTradeRef.current = { proposalId, positionSizeUsd };
+        pendingTradeRef.current = { proposalId, positionSizeUsd, leverage };
         // Open auth modal
         setIsAuthModalOpen(true);
       }
@@ -124,15 +124,15 @@ export default function AgentPage() {
    * Handle retry trade
    */
   const handleRetryTrade = useCallback(
-    async (proposalId: string, positionSizeUsd: number) => {
+    async (proposalId: string, positionSizeUsd: number, leverage: number) => {
       // Check auth status again in case token expired
       const authed = await checkAuthStatus();
 
       if (authed) {
-        await retryTrade(proposalId, positionSizeUsd);
+        await retryTrade(proposalId, positionSizeUsd, leverage);
       } else {
         // User needs to re-authenticate
-        pendingTradeRef.current = { proposalId, positionSizeUsd };
+        pendingTradeRef.current = { proposalId, positionSizeUsd, leverage };
         setIsAuthModalOpen(true);
       }
     },

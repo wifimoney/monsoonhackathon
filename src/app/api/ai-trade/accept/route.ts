@@ -41,8 +41,10 @@ interface PearPayload {
  * Format: { longAssets: [{asset, weight}], shortAssets: [{asset, weight}], slippage, leverage, usdValue, executionType }
  * Do NOT pass stopLoss/takeProfit to Pear API
  *
- * Each asset is an object with asset name and normalized weight
- * All weights should sum to 1.0 across both sides
+ * Each asset's weight is normalized WITHIN its side (long or short) to sum to 1.0
+ * Example: 50% ARB long, 25% ETH short, 25% SOL short becomes:
+ *   longAssets: [{ ARB: 1.0 }]  (100% of long side)
+ *   shortAssets: [{ ETH: 0.5 }, { SOL: 0.5 }]  (50% each of short side)
  */
 function convertToPearFormat(
   longPositions: Position[],
@@ -50,21 +52,23 @@ function convertToPearFormat(
   usdValue: number,
   leverage: number
 ): PearPayload {
-  // Calculate total weight across BOTH sides
+  // Calculate total weight for EACH side separately
   const longTotalWeight = longPositions.reduce((sum, p) => sum + p.weight, 0);
   const shortTotalWeight = shortPositions.reduce((sum, p) => sum + p.weight, 0);
-  const combinedTotalWeight = longTotalWeight + shortTotalWeight;
 
-  // Normalize so that ALL weights (long + short) sum to 1.0
+  // Normalize weights WITHIN each side to sum to 1.0
   const longAssets = longPositions.map((p) => ({
     asset: p.symbol,
-    weight: combinedTotalWeight > 0 ? p.weight / combinedTotalWeight : 0,
+    weight: longTotalWeight > 0 ? p.weight / longTotalWeight : 0,
   }));
 
   const shortAssets = shortPositions.map((p) => ({
     asset: p.symbol,
-    weight: combinedTotalWeight > 0 ? p.weight / combinedTotalWeight : 0,
+    weight: shortTotalWeight > 0 ? p.weight / shortTotalWeight : 0,
   }));
+
+  console.log('[convertToPearFormat] Long side total:', longTotalWeight, '% -> weights:', longAssets);
+  console.log('[convertToPearFormat] Short side total:', shortTotalWeight, '% -> weights:', shortAssets);
 
   return {
     longAssets,
@@ -267,7 +271,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const message = `Trade executed successfully via Pear Protocol with $${positionSizeUsd.toLocaleString()} position size.
+      const message = `Trade executed successfully via Pear Protocol with $${positionSizeUsd.toLocaleString()} position size at ${leverageValue}x leverage.
 
 **LONG:** ${longSummary || 'None'}
 **SHORT:** ${shortSummary || 'None'}

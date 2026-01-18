@@ -57,6 +57,28 @@ function getPairString(position: PearPosition): string {
 }
 
 /**
+ * Get leverage from position assets
+ * Returns the leverage from the first asset (all assets in a position typically have the same leverage)
+ */
+function getPositionLeverage(position: PearPosition): number {
+  // Try long assets first
+  if (position.longAssets && position.longAssets.length > 0) {
+    const first = position.longAssets[0];
+    if (typeof first !== 'string' && 'leverage' in first) {
+      return (first as { leverage: number }).leverage;
+    }
+  }
+  // Try short assets
+  if (position.shortAssets && position.shortAssets.length > 0) {
+    const first = position.shortAssets[0];
+    if (typeof first !== 'string' && 'leverage' in first) {
+      return (first as { leverage: number }).leverage;
+    }
+  }
+  return 1; // Default to 1x if not found
+}
+
+/**
  * Dashboard Portfolio page
  * Combines portfolio functionality with dashboard styling
  */
@@ -333,6 +355,7 @@ export default function DashboardPortfolioPage() {
             {displayPositions.map((position, i) => {
               const pnl = position.unrealizedPnl ?? position.unrealizedPnL ?? 0;
               const isPositive = pnl >= 0;
+              const leverage = getPositionLeverage(position);
               return (
                 <div
                   key={position.positionId || i}
@@ -345,9 +368,14 @@ export default function DashboardPortfolioPage() {
                       <TrendingDown className="h-5 w-5 text-red-400" />
                     )}
                     <div>
-                      <p className="font-mono font-medium text-sm">
-                        {getPairString(position)}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono font-medium text-sm">
+                          {getPairString(position)}
+                        </p>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono">
+                          {leverage}x
+                        </span>
+                      </div>
                       <p className="text-caption font-mono">
                         ${(position.positionValue ?? position.size ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} position
                       </p>
@@ -357,9 +385,6 @@ export default function DashboardPortfolioPage() {
                     <div className="text-right">
                       <p className={`font-mono font-medium text-sm ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
                         {isPositive ? '+' : ''}{pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-caption font-mono">
-
                       </p>
                     </div>
                     <button
