@@ -73,7 +73,7 @@ export default function VaultPage() {
       }, 2000)
       return () => clearTimeout(timer)
     }
-  }, [isDepositSuccess, isWithdrawSuccess, depositHash, withdrawHash])
+  }, [isDepositSuccess, isWithdrawSuccess, depositHash, withdrawHash, refetchPool, refetchLpBalance, refetchToken0, refetchToken1])
 
   // Show chain switch prompt if on wrong chain
   if (isWrongChain) {

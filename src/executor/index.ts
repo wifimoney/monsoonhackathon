@@ -63,7 +63,7 @@ export class OBExecutor {
         console.log(`   Chain ID: ${CHAIN_ID}`);
         console.log(`   RPC: ${RPC_URL}`);
         console.log(`   ALM: ${MONSOON_ALM}`);
-        console.log(`   HyperLiquid: ${this.hyperliquid ? 'Connected' : 'Simulated'}`);
+        console.log(`   HyperLiquid: ${this.hl ? 'Connected' : 'Simulated'}`);
         console.log('');
 
         // Watch for AllocateToOB events on HyperEVM
