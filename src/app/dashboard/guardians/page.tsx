@@ -100,7 +100,7 @@ export default function GuardiansPage() {
       ...config,
       [type]: {
         ...config[type],
-        enabled: !config[type].enabled
+        enabled: !config[type]?.enabled
       }
     };
 
@@ -156,13 +156,24 @@ export default function GuardiansPage() {
         <div className="flex items-center justify-between mb-4 mt-8">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             Active Configuration
-            {isSaving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </h2>
-          {activePreset === 'custom' && (
-            <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">
-              CUSTOM CONFIGURATION
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {activePreset === 'custom' && (
+              <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">
+                CUSTOM CONFIGURATION
+              </span>
+            )}
+            <Button
+              onClick={() => saveToDb(config)}
+              disabled={isSaving || !session?.authenticated}
+              variant="default" // Making it prominent
+              size="sm"
+              className="gap-2"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Configuration
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

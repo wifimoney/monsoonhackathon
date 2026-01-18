@@ -12,14 +12,21 @@ let db: Database.Database | null = null;
  */
 export function getDatabase(): Database.Database {
     if (!db) {
-        // Ensure data directory exists
-        const fs = require('fs');
-        const dataDir = path.dirname(DB_PATH);
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
+        try {
+            // Ensure data directory exists
+            const fs = require('fs');
+            const dataDir = path.dirname(DB_PATH);
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+
+            db = new Database(DB_PATH);
+            console.log(`[Audit] Initialized SQLite at ${DB_PATH}`);
+        } catch (error) {
+            console.warn(`[Audit] Failed to initialize file database, falling back to in-memory:`, error);
+            db = new Database(':memory:');
         }
 
-        db = new Database(DB_PATH);
         db.pragma('journal_mode = WAL');
         initializeSchema();
     }
