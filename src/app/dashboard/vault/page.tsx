@@ -85,6 +85,16 @@ export default function VaultPage() {
           value={poolLoading ? "Loading..." : `$${parseFloat(oraclePrice).toFixed(2)}`}
           subtitle="From HyperCore"
         />
+        <DataCard
+          title="Yield Allocation (Token0)"
+          value={poolLoading ? "Loading..." : `${poolInfo ? formatTokenAmount(poolInfo[12], 6) : "0"}`}
+          subtitle="In Strategy"
+        />
+        <DataCard
+          title="Yield Allocation (Token1)"
+          value={poolLoading ? "Loading..." : `${poolInfo ? formatTokenAmount(poolInfo[13], 18) : "0"}`}
+          subtitle="In Strategy"
+        />
       </div>
 
       {/* Vault Actions */}
