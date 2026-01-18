@@ -53,7 +53,7 @@ function getPairString(position: PearPosition): string {
   if (shortStr) {
     return `${shortStr} Short`;
   }
-  return position.pair || position.symbol || 'Unknown';
+  return 'Unknown';
 }
 
 /**
@@ -359,7 +359,7 @@ export default function DashboardPortfolioPage() {
                         {isPositive ? '+' : ''}{pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                       <p className="text-caption font-mono">
-                        {position.leverage ? `${position.leverage}x` : ''}
+
                       </p>
                     </div>
                     <button

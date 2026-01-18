@@ -81,7 +81,7 @@ function convertToPearFormat(
 async function executePearTrade(
   pearPayload: PearPayload,
   accessToken: string
-): Promise<{ success: boolean; positionId?: string; error?: string }> {
+): Promise<{ success: boolean; positionId?: string; error?: string; fills?: unknown[]; filledAssets?: string[] }> {
   try {
     const requestBody = {
       longAssets: pearPayload.longAssets,
@@ -143,7 +143,7 @@ async function executePearTrade(
       success: true,
       positionId: data.positionId || data.orderId,
       fills: fills,
-      filledAssets: Array.from(filledAssets),
+      filledAssets: Array.from(filledAssets) as string[],
     };
   } catch (error) {
     console.error('executePearTrade error:', error);
